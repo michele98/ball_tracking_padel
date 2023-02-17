@@ -3,6 +3,8 @@ import cv2
 import numpy as np
 import pandas as pd
 from typing import Tuple, Callable
+
+import torch
 from torch.utils.data import Dataset
 
 
@@ -13,6 +15,8 @@ class VideoDataset(Dataset):
                  root: str,
                  output_heatmap: bool = True,
                  transform: Callable = None,
+                 target_transform: Callable = None,
+                 concatenate_sequence: bool = True,
                  sequence_length: int = 3,
                  overlap_sequences: bool = True,
                  image_size: Tuple[int, int] = None,
@@ -46,6 +50,10 @@ class VideoDataset(Dataset):
             Otherwise outputs only the ball coordinates. By default True
         transform : Callable, optional
             transformation to apply to the video frames
+        target_transform : Callable, optional
+            transformation to apply to the output
+        concatenate_sequence : bool, optional
+            Concatenate frames and heatmaps along the channel dimension. By default True
         sequence_length : int, optional
             length of the video frame sequence. By default 3
         overlap_sequences : bool, optional
@@ -68,6 +76,8 @@ class VideoDataset(Dataset):
         self.root = root
         self.output_heatmap = output_heatmap
         self.transform = transform
+        self.target_transform = target_transform
+        self.concatenate_sequence = concatenate_sequence
         self.label_df = pd.read_csv(os.path.join(root, "labels.csv"))
         self.sequence_length = sequence_length
         self.overlap_sequences = overlap_sequences
@@ -100,7 +110,7 @@ class VideoDataset(Dataset):
 
         absolute_difference = np.abs(frame_1 - frame_2)
         num_equal = np.count_nonzero(absolute_difference==0)
-        num_tot = absolute_difference.size
+        num_tot = np.prod(absolute_difference.shape)
 
         return num_equal/num_tot > self.duplicate_equality_threshold
 
@@ -139,6 +149,9 @@ class VideoDataset(Dataset):
 
         heatmap[y:y + (size*2) + 1, x:x + (size*2) + 1] = g
         heatmap = heatmap[size:-size, size:-size]
+
+        if self.target_transform is not None:
+            heatmap = self.target_transform(heatmap)
         return heatmap
 
     def __len__(self):
@@ -175,5 +188,9 @@ class VideoDataset(Dataset):
 
             frames.append(frame)
             labels.append(self._generate_heatmap(frame_number) if self.output_heatmap else self._get_coordinates(frame_number))
+
+        if self.concatenate_sequence and type(labels[0]) is torch.Tensor and type(frames[0]) is torch.Tensor:
+            frames = torch.cat(frames, dim=0)
+            labels = torch.cat(labels, dim=0)
 
         return frames, labels
