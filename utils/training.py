@@ -123,14 +123,13 @@ def validate(net : torch.nn.Module,
 
     with torch.no_grad():
         for batch_idx, data in enumerate(dataloader_val):
-            inputs = data[0][0].to(device)
-            t = data[0][1].to(device)
+            inputs = data[0].to(device)
             labels = data[1].to(device)
 
             with torch.autocast(device_type='cuda', dtype=torch.float16):
                 
                 # Compute prediction (forward input in the model)
-                outputs = net(inputs, t)
+                outputs = net(inputs)
 
                 # Compute prediction error with the loss function
                 error = loss_function(outputs, labels)
