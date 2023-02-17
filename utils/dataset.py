@@ -135,7 +135,6 @@ class VideoDataset(Dataset):
         size = 5*self.sigma
 
         heatmap = np.zeros(self.image_size, dtype=np.float32)
-        heatmap = np.pad(heatmap, size)
 
         y, x = self._get_coordinates(frame_number)
 
@@ -147,6 +146,7 @@ class VideoDataset(Dataset):
             g = np.exp(-(x_grid**2 + y_grid**2) / float(2 * self.sigma**2))
             g /= 2*np.pi*self.sigma**2
 
+            heatmap = np.pad(heatmap, size)
             heatmap[y:y + (size*2) + 1, x:x + (size*2) + 1] = g
             heatmap = heatmap[size:-size, size:-size]
 
