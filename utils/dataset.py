@@ -9,16 +9,25 @@ from torch.utils.data import Dataset
 #TODO: add support for other video formats
 #TODO: add option for removing non annotated frames if they come up in a frame sequence
 class VideoDataset(Dataset):
-    def __init__(self, root : str,
-                 output_heatmap=True,
-                 transform : Callable = None,
-                 sequence_length=3,
-                 overlap_sequences=True,
-                 image_size : Tuple[int, int] = None,
-                 sigma : float = 5):
+    def __init__(self,
+                 root: str,
+                 output_heatmap: bool = True,
+                 transform: Callable = None,
+                 sequence_length: int = 3,
+                 overlap_sequences: bool = True,
+                 image_size: Tuple[int, int] = None,
+                 sigma: float = 5,
+                 drop_duplicate_frames: bool = True,
+                 duplicate_equality_threshold: float = 0.97):
         """Dataset that starts from a video and csv file with the ball position in each frame.
         The coordinates in the csv file are pixel coordinates, normalized between 0 and 1.
-        Outputs a frame sequence and the cooresponding ball pixel coordinates or heatmaps.
+        Outputs a sequence of consecutive frames and the cooresponding ball pixel coordinates or heatmaps.
+
+        The first frame of the sequence always has the labeled coordinates.
+        If the next frames in the sequence are not labelled:
+         - if `output_heatmap` is set to True a heatmap containing only `0` is returned
+         - if `output_heatmap` is set to False `(None, None)` is returned
+
 
         Parameters
         ----------
@@ -46,8 +55,15 @@ class VideoDataset(Dataset):
         image_size : Tuple[int, int], optional
             resize the frames to `(height, width)`. If not provided, the original size is kept
         sigma : float, optional
-            the width in pixels of the gaussian centered on the ball. Used only if output_heatmap` is set to True.
+            the width in pixels of the gaussian centered on the ball. Used only if `output_heatmap` is set to True.
             By default 5
+        drop_duplicate_frames : bool, optional
+            Choose wheter to drop duplicate frames from the frame sequence.
+            Attention, this might make the `__len__()` method unreliable, since the number of duplicate frames is not known beforehand.
+            By default True
+        duplicate_equality_threshold : float, optional
+            Frames are considered equal if the fraction of pixels with the same value between 2 frames is larger than this.
+            By default 0.97
         """
         self.root = root
         self.output_heatmap = output_heatmap
@@ -62,6 +78,8 @@ class VideoDataset(Dataset):
         else:
             self.image_size = image_size
         self.sigma = sigma
+        self.drop_duplicate_frames = drop_duplicate_frames
+        self.duplicate_equality_threshold = duplicate_equality_threshold
 
     def _read_frame(self, frame_number):
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -74,6 +92,17 @@ class VideoDataset(Dataset):
             else:
                 print(f"Attention! Failed to read {frame_number}")
                 return None #TODO: make it handle this None
+
+    def _equal_frames(self, frame_1, frame_2):
+        """Check if frames are equal. Returns False if either one is None."""
+        if frame_1 is None or frame_2 is None:
+            return False
+
+        absolute_difference = np.abs(frame_1 - frame_2)
+        num_equal = np.count_nonzero(absolute_difference==0)
+        num_tot = absolute_difference.size
+
+        return num_equal/num_tot > self.duplicate_equality_threshold
 
     def _get_normalized_coordinates(self, frame_number):
         idx = self.label_df.loc[self.label_df['num']==frame_number].index
@@ -94,6 +123,9 @@ class VideoDataset(Dataset):
     # TODO: check padding info
     def _generate_heatmap(self, frame_number):
         y, x = self._get_coordinates(frame_number)
+        if x is None or y is None:
+            return np.zeros(self.image_size)
+
         x = int(x)
         y = int(y)
         size = 5*self.sigma
@@ -115,17 +147,33 @@ class VideoDataset(Dataset):
         return len(self.label_df)//self.sequence_length
 
     def __getitem__(self, idx):
+        if idx<0:
+            idx += len(self.label_df)
+
         if self.overlap_sequences:
             item_idx = idx
         else:
             item_idx = idx*self.sequence_length
 
-        starting_frame = self.label_df['num'][item_idx]
+        starting_frame_number = self.label_df['num'][item_idx]
 
         frames = []
         labels = []
-        for i in range(self.sequence_length):
-            frames.append(self._read_frame(starting_frame+i))
-            labels.append(self._generate_heatmap(starting_frame+i) if self.output_heatmap else self._get_coordinates(starting_frame+i))
+
+        i = 0 # index for counting the frames in the sequence
+        j = 0 # index for keeping track of duplicate frames
+        last_used_frame = None
+        #for i in range(self.sequence_length):
+        while i < self.sequence_length:
+            frame_number = starting_frame_number+i+j
+            frame = self._read_frame(frame_number)
+            if self._equal_frames(last_used_frame, frame) and self.drop_duplicate_frames:
+                j+=1
+                continue
+            last_used_frame = frame
+            i+=1
+
+            frames.append(frame)
+            labels.append(self._generate_heatmap(frame_number) if self.output_heatmap else self._get_coordinates(frame_number))
 
         return frames, labels
