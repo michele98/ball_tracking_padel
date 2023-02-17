@@ -132,26 +132,27 @@ class VideoDataset(Dataset):
     # TODO: utilize visibility info
     # TODO: check padding info
     def _generate_heatmap(self, frame_number):
-        y, x = self._get_coordinates(frame_number)
-        if x is None or y is None:
-            return np.zeros(self.image_size)
-
-        x = int(x)
-        y = int(y)
         size = 5*self.sigma
 
-        x_grid, y_grid = np.mgrid[-size:size + 1, -size:size + 1]
-        g = np.exp(-(x_grid**2 + y_grid**2) / float(2 * self.sigma**2))
-        g /= 2*np.pi*self.sigma**2
-
-        heatmap = np.zeros(self.image_size)
+        heatmap = np.zeros(self.image_size, dtype=np.float32)
         heatmap = np.pad(heatmap, size)
 
-        heatmap[y:y + (size*2) + 1, x:x + (size*2) + 1] = g
-        heatmap = heatmap[size:-size, size:-size]
+        y, x = self._get_coordinates(frame_number)
+
+        if x is not None and y is not None:
+            x = int(x)
+            y = int(y)
+
+            x_grid, y_grid = np.mgrid[-size:size + 1, -size:size + 1]
+            g = np.exp(-(x_grid**2 + y_grid**2) / float(2 * self.sigma**2))
+            g /= 2*np.pi*self.sigma**2
+
+            heatmap[y:y + (size*2) + 1, x:x + (size*2) + 1] = g
+            heatmap = heatmap[size:-size, size:-size]
 
         if self.target_transform is not None:
             heatmap = self.target_transform(heatmap)
+
         return heatmap
 
     def __len__(self):
