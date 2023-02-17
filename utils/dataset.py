@@ -76,7 +76,7 @@ class VideoDataset(Dataset):
                 return None #TODO: make it handle this None
 
     def _get_normalized_coordinates(self, frame_number):
-        idx = self.label_df.loc[self.label_df['num']==frame_number].index
+        idx = self.label_df.loc[self.label_df['num']==frame_number+1].index
         if len(idx)==0:
             return None
         x = self.label_df['x'].iloc[idx].values[0]
@@ -96,10 +96,11 @@ class VideoDataset(Dataset):
         y, x = self._get_coordinates(frame_number)
         x = int(x)
         y = int(y)
-        size = 3*self.sigma
+        size = 5*self.sigma
 
         x_grid, y_grid = np.mgrid[-size:size + 1, -size:size + 1]
         g = np.exp(-(x_grid**2 + y_grid**2) / float(2 * self.sigma**2))
+        g /= 2*np.pi*self.sigma**2
 
         heatmap = np.zeros(self.image_size)
         heatmap = np.pad(heatmap, size)
@@ -128,4 +129,3 @@ class VideoDataset(Dataset):
             labels.append(self._generate_heatmap(starting_frame+i) if self.output_heatmap else self._get_coordinates(starting_frame+i))
 
         return frames, labels
-
