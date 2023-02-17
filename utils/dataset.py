@@ -13,6 +13,7 @@ from torch.utils.data import Dataset
 class VideoDataset(Dataset):
     def __init__(self,
                  root: str,
+                 split: str = 'train',
                  output_heatmap: bool = True,
                  transform: Callable = None,
                  target_transform: Callable = None,
@@ -45,6 +46,8 @@ class VideoDataset(Dataset):
                  - `y` (float): normalized vertical coordinate from the upper border;
                  - `visibility` (int): 0 (occluded), 1 (visible), 2 (motion blurred).
 
+        split : str
+            `'train'`, `'val'` or `'test'`. By default `'train'`
         output_heatmap : bool, optional
             if set to True, outputs a heatmap with the probability of finding the ball in a specific pixel.
             Otherwise outputs only the ball coordinates. By default True
@@ -78,7 +81,7 @@ class VideoDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.concatenate_sequence = concatenate_sequence
-        self.label_df = pd.read_csv(os.path.join(root, "labels.csv"))
+        self.label_df = pd.read_csv(os.path.join(root, f"labels_{split}.csv"))
         self.sequence_length = sequence_length
         self.overlap_sequences = overlap_sequences
         self.cap = cv2.VideoCapture(os.path.join(root, "video.mp4"))
