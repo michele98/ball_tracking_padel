@@ -76,7 +76,7 @@ class VideoDataset(Dataset):
                 return None #TODO: make it handle this None
 
     def _get_normalized_coordinates(self, frame_number):
-        idx = self.label_df.loc[self.label_df['num']==frame_number+1].index
+        idx = self.label_df.loc[self.label_df['num']==frame_number].index
         if len(idx)==0:
             return None
         x = self.label_df['x'].iloc[idx].values[0]
