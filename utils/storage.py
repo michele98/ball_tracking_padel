@@ -15,6 +15,7 @@ def create_checkpoint_dict(net : torch.nn.Module,
                            loss_history_val : list,
                            additional_info : dict = {}):
     """Get the training checkpoint dictionary.
+
     Parameters
     ----------
     net : torch.nn.Module
@@ -24,6 +25,7 @@ def create_checkpoint_dict(net : torch.nn.Module,
     loss_history : list
     loss_history_val : list
     additional_info : dict, optional
+
     Returns
     -------
     checkpoint_dict : dict
@@ -51,7 +53,8 @@ def create_checkpoint_dict(net : torch.nn.Module,
 
 
 def save_checkpoint(checkpoint_dict, checkpoint_folder, clear_previous_checkpoints=True, keep_best=True, verbose=False):
-    """Save the given checkpoint dictionary into the specified checkpoint folder
+    """Save the given checkpoint dictionary into the specified checkpoint folder.
+
     Parameters
     ----------
     checkpoint_dict : dict
@@ -85,7 +88,7 @@ def save_checkpoint(checkpoint_dict, checkpoint_folder, clear_previous_checkpoin
     # save loss history train
     np.savetxt(os.path.join(checkpoint_folder, 'loss_history.csv'), checkpoint_dict['loss_history'], delimiter=',')
     # save loss history val
-    np.savetxt(os.path.join(checkpoint_folder, 'loss_history_val.csv'), checkpoint_dict['loss_history'], delimiter=',')
+    np.savetxt(os.path.join(checkpoint_folder, 'loss_history_val.csv'), checkpoint_dict['loss_history_val'], delimiter=',')
 
     if verbose: print(f"Checkpoint saved: {filepath}.")
 
@@ -111,10 +114,12 @@ def _clear_checkpoint_folder(checkpoint_folder, keep_best):
 
 def load_checkpoint_dict(checkpoint_folder : str):
     """Load the checkpoint dictionary from the specified checkpoint folder.
+
     Parameters
     ----------
     checkpoint_folder : str
         folder containing the checkpoint file.
+
     Returns
     -------
     dict
@@ -126,6 +131,7 @@ def load_checkpoint_dict(checkpoint_folder : str):
         - loss_history
         - loss_history_val
         - additional_info
+
     Raises
     ------
     FileNotFoundError
@@ -152,6 +158,7 @@ def load_checkpoint(checkpoint_folder : str,
                     optimizer : torch.optim.Optimizer,
                     scheduler):  # TODO type
     """Load training status from a checkpoint folder.
+
     Parameters
     ----------
     checkpoint_folder : str
@@ -159,6 +166,7 @@ def load_checkpoint(checkpoint_folder : str,
     net : torch.nn.Module
     optimizer : torch.optim.Optimizer
     scheduler : torch.optim.lr_scheduler._LRScheduler
+
     Returns
     -------
     epoch : int
@@ -172,6 +180,7 @@ def load_checkpoint(checkpoint_folder : str,
     loss_history_val : list
     additional_info : dict
     None if ``checkpoint_folder`` is empty.
+
     Raises
     ------
     FileNotFoundError
@@ -195,6 +204,7 @@ def load_checkpoint(checkpoint_folder : str,
 
 def load_weights(net : torch.nn.Module, checkpoint_filename : str):
     """Load weights from a checkpoint. The model is automatically set to eval mode.
+
     Parameters
     ----------
     net : torch.nn.Module
