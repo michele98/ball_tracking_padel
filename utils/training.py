@@ -176,9 +176,9 @@ def train_model(net : torch.nn.Module,
     epochs : int
     optimizer : torch.optim.Optimizer, optional
         by default Adam.
-    scheduler : torch.optim.lr_scheduler._LRScheduler, optional   
+    scheduler : torch.optim.lr_scheduler._LRScheduler, optional
         learning rate scheduler, by default None.
-        The update of the LR is performed either after each epoch (standard update) or after each batch (only for 
+        The update of the LR is performed either after each epoch (standard update) or after each batch (only for
         `OneCycleLR` and `CyclicLR`).
     device : torch.device, optional
         cpu or cuda, by default cpu.
@@ -222,7 +222,7 @@ def train_model(net : torch.nn.Module,
         # two schedulers).
         scheduler_update_each_batch = False
         if type(scheduler)==OneCycleLR or type(scheduler)==CyclicLR:
-            scheduler_update_each_batch = True 
+            scheduler_update_each_batch = True
 
     save_checkpoints = checkpoint_folder is not None
 
@@ -231,12 +231,12 @@ def train_model(net : torch.nn.Module,
     loss_history_val = []
 
     # The scaler for using 16 bits precision
-    scaler=torch.cuda.amp.GradScaler()
+    scaler = torch.cuda.amp.GradScaler()
 
     # resume from previous checkpoint
     if checkpoint_folder is not None:
         if os.path.exists(checkpoint_folder):
-            checkpoint = load_checkpoint(checkpoint_folder=checkpoint_folder, net=net, optimizer=optimizer, 
+            checkpoint = load_checkpoint(checkpoint_folder=checkpoint_folder, net=net, optimizer=optimizer,
                                          scheduler=scheduler)
             if checkpoint is not None:
                 starting_epoch, net, optimizer, scheduler, loss_history, loss_history_val, additional_info = checkpoint
@@ -258,9 +258,9 @@ def train_model(net : torch.nn.Module,
                                       dataloader_train=dataloader_train,
                                       loss_function=loss_function,
                                       optimizer=optimizer,
-                                      # Specify the scheduler to the train epoch only if a scheduler exists and if the LR 
+                                      # Specify the scheduler to the train epoch only if a scheduler exists and if the LR
                                       # update must be performed after each batch (and not after each epoch)
-                                      scheduler=None if (scheduler is None or not scheduler_update_each_batch) else  scheduler,
+                                      scheduler=None if (scheduler is None or not scheduler_update_each_batch) else scheduler,
                                       device=device,
                                       scaler=scaler,
                                       prefix='\tTrain ')
