@@ -156,7 +156,7 @@ def load_checkpoint_dict(checkpoint_folder : str):
 def load_checkpoint(checkpoint_folder : str,
                     net : torch.nn.Module,
                     optimizer : torch.optim.Optimizer,
-                    scheduler):  # TODO type
+                    scheduler : torch.optim.lr_scheduler._LRScheduler):
     """Load training status from a checkpoint folder.
 
     Parameters
