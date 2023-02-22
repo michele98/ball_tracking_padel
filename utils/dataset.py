@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 class VideoDataset(Dataset):
     def __init__(self,
                  root: str,
-                 split: str = 'train',
+                 split: str = None,
                  output_heatmap: bool = True,
                  transform: Callable = None,
                  target_transform: Callable = None,
@@ -42,14 +42,16 @@ class VideoDataset(Dataset):
             directory containing the video and csv with the ball position at each frame.
             it must contain the following files:
              - video.mp4: video file
-             - labels.csv: must contain the following attributes:
+             - labels[_split].csv: must contain the following attributes:
                  - `num` (int): frame number;
                  - `x` (float): normalized horizontal coordinate from the left border;
                  - `y` (float): normalized vertical coordinate from the upper border;
                  - `visibility` (int): 0 (occluded), 1 (visible), 2 (motion blurred), 3 (unknown).
 
-        split : str
-            `'train'`, `'val'` or `'test'`. By default `'train'`
+        split : str, optional
+            `'train'`, `'val'` or `'test'`.
+            If provided, the file named `labels_[split].csv` will be used.
+            Otherwise, the file named `labels.csv` will be used.
         output_heatmap : bool, optional
             if set to True, outputs a heatmap with the probability of finding the ball in a specific pixel.
             Otherwise outputs only the ball coordinates. By default True
@@ -92,7 +94,11 @@ class VideoDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.concatenate_sequence = concatenate_sequence
-        self._label_df = pd.read_csv(os.path.join(root, f"labels_{split}.csv"))
+        self.split = split
+        if split is None:
+            self._label_df = pd.read_csv(os.path.join(root, f"labels.csv"))
+        else:
+            self._label_df = pd.read_csv(os.path.join(root, f"labels_{split}.csv"))
         self.sequence_length = sequence_length
         self.overlap_sequences = overlap_sequences
         self._cap = cv2.VideoCapture(os.path.join(root, "video.mp4"))
