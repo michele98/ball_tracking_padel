@@ -4,7 +4,7 @@ from torch import nn
 """Adapted from https://github.com/mareksubocz/TrackNet"""
 
 
-class TrackNet(nn.Module):
+class TrackNetV2Base(nn.Module):
     def _make_convolution_sublayer(self, in_channels, out_channels, dropout_rate=0.0):
         layer = [
             nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), padding="same"),
@@ -24,8 +24,21 @@ class TrackNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def __init__(self, grayscale=False, dropout=0.1, sequence_length=3, one_output_frame=False):
+    def __init__(self, grayscale=False, dropout=0.1, sequence_length=3):
+        """Backbone of TrackNetV2, until the last 64 channel convolution of DeconvNet.
+
+        Parameters
+        ----------
+        grayscale : bool, optional
+            if True, the input frames are converted to grayscale. By default False
+        dropout : float, optional
+            choose whether to use dropout, by default 0.1
+        sequence_length : int, optional
+            sequence of input frames, by default 3
+        """
         super().__init__()
+
+        self.sequence_length = sequence_length
 
         # VGG16
         if grayscale:
@@ -47,12 +60,6 @@ class TrackNet(nn.Module):
         self.unet_upsample3 = nn.UpsamplingNearest2d(scale_factor=2)
         self.unet_conv3 = self._make_convolution_layer(192, 64, 2, dropout_rate=dropout)
 
-        if one_output_frame:
-            self.last_conv = nn.Conv2d(64, 1, kernel_size=(1,1), padding="same")
-        else:
-            self.last_conv = nn.Conv2d(64, sequence_length, kernel_size=(1,1), padding="same")
-        self.last_sigmoid = nn.Sigmoid()
-
     def forward(self, x):
         # VGG16
         x1 = self.vgg_conv1(x)
@@ -71,9 +78,6 @@ class TrackNet(nn.Module):
         x = torch.concat([self.unet_upsample3(x), x1], dim=1)
         x = self.unet_conv3(x)
 
-        x = self.last_conv(x)
-        x = self.last_sigmoid(x)
-
         return x
 
     def save(self, path, whole_model=False):
@@ -84,3 +88,55 @@ class TrackNet(nn.Module):
 
     def load(self, path, device='cpu'):
         self.load_state_dict(torch.load(path, map_location=device)['model_state_dict'])
+
+
+class TrackNetV2MSE(TrackNetV2Base):
+    def __init__(self, one_output_frame=True, *args, **kwargs):
+        """TrackNetV2 implementation, where the last layer outputs a single heatmap.
+        Meant to be used with MSE loss.
+
+        Parameters
+        ----------
+        one_output_frame : bool, optional
+            if set to True, outputs a single heatmap. If set to False, outputs a heatmap for each input frame.
+            By default True
+        *args, **kwargs : passed to `TrackNetV2Base`
+        """
+        super().__init__(*args, **kwargs)
+
+        if one_output_frame:
+            self.last_conv = nn.Conv2d(64, 1, kernel_size=(1,1), padding="same")
+        else:
+            self.last_conv = nn.Conv2d(64, self.sequence_length, kernel_size=(1,1), padding="same")
+        self.last_sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = super().forward(x)
+
+        x = self.last_conv(x)
+        x = self.last_sigmoid(x)
+
+        return x
+
+
+class TrackNetV2NLL(TrackNetV2Base):
+    def __init__(self, *args, **kwargs):
+        """`TrackNetV2` implementation, where the last layer outputs a single heatmap.
+        Meant to be used with NLL loss along the channel dimension.
+
+        Parameters
+        ----------
+        *args, **kwargs : passed to TrackNetV2Base
+        """
+        super().__init__(*args, **kwargs)
+
+        self.last_conv = nn.Conv2d(64, 256, kernel_size=(1,1), padding="same")
+        self.last_logsoftmax = nn.LogSoftmax(dim=1) # compute logsoftmax along the channel dimension
+
+    def forward(self, x):
+        x = super().forward(x)
+
+        x = self.last_conv(x)
+        x = self.last_logsoftmax(x)
+
+        return x
