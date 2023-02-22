@@ -46,7 +46,7 @@ class VideoDataset(Dataset):
                  - `num` (int): frame number;
                  - `x` (float): normalized horizontal coordinate from the left border;
                  - `y` (float): normalized vertical coordinate from the upper border;
-                 - `visibility` (int): 0 (occluded), 1 (visible), 2 (motion blurred).
+                 - `visibility` (int): 0 (occluded), 1 (visible), 2 (motion blurred), 3 (unknown).
 
         split : str
             `'train'`, `'val'` or `'test'`. By default `'train'`
@@ -92,12 +92,12 @@ class VideoDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.concatenate_sequence = concatenate_sequence
-        self.label_df = pd.read_csv(os.path.join(root, f"labels_{split}.csv"))
+        self._label_df = pd.read_csv(os.path.join(root, f"labels_{split}.csv"))
         self.sequence_length = sequence_length
         self.overlap_sequences = overlap_sequences
-        self.cap = cv2.VideoCapture(os.path.join(root, "video.mp4"))
+        self._cap = cv2.VideoCapture(os.path.join(root, "video.mp4"))
         if image_size is None:
-            _, frame = self.cap.read()
+            _, frame = self._cap.read()
             self.image_size = frame.shape[:2]
         else:
             self.image_size = image_size
@@ -110,8 +110,8 @@ class VideoDataset(Dataset):
         self.one_output_frame = one_output_frame
 
     def _read_frame(self, frame_number):
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, frame = self.cap.read()
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = self._cap.read()
             if ret:
                 resized_frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), self.image_size[::-1])
                 if self.transform is not None:
@@ -133,11 +133,11 @@ class VideoDataset(Dataset):
         return num_equal/num_tot > self.duplicate_equality_threshold
 
     def _get_normalized_coordinates(self, frame_number):
-        idx = self.label_df.loc[self.label_df['num']==frame_number].index
+        idx = self._label_df.loc[self._label_df['num']==frame_number].index
         if len(idx)==0:
             return None
-        x = self.label_df['x'].iloc[idx].values[0]
-        y = self.label_df['y'].iloc[idx].values[0]
+        x = self._label_df['x'].iloc[idx].values[0]
+        y = self._label_df['y'].iloc[idx].values[0]
         return y, x
 
     def _get_coordinates(self, frame_number):
@@ -183,19 +183,19 @@ class VideoDataset(Dataset):
 
     def __len__(self):
         if self.overlap_sequences:
-            return len(self.label_df)
-        return len(self.label_df)//self.sequence_length
+            return len(self._label_df)
+        return len(self._label_df)//self.sequence_length
 
     def __getitem__(self, idx):
         if idx<0:
-            idx += len(self.label_df)
+            idx += len(self._label_df)
 
         if self.overlap_sequences:
             item_idx = idx
         else:
             item_idx = idx*self.sequence_length
 
-        starting_frame_number = self.label_df['num'][item_idx]
+        starting_frame_number = self._label_df['num'][item_idx]
 
         frames = []
         if not self.one_output_frame: labels = []
