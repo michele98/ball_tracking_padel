@@ -5,7 +5,7 @@ import pandas as pd
 from typing import Tuple, Callable
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, ConcatDataset
 
 
 #TODO: add support for other video formats
@@ -219,8 +219,6 @@ class VideoDataset(Dataset):
             last_used_frame = frame
             i+=1
 
-            #print(frame_number)
-
             frames.append(frame)
             if not self.one_output_frame:
                 labels.append(self._generate_heatmap(frame_number) if self.output_heatmap else self._get_coordinates(frame_number))
@@ -235,3 +233,34 @@ class VideoDataset(Dataset):
                     labels = torch.cat(labels, dim=0)
 
         return frames, labels
+
+    def get_info(self):
+        """Has all the info that was used to cheate the current instance of the `VideoDataset`.
+
+        Returns
+        -------
+        dict
+            It contains the values of the arguments passed to the constructor.
+        """
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+
+
+class MyConcatDataset(ConcatDataset):
+    r"""Dataset as a concatenation of multiple datasets.
+
+    This class is useful to assemble different existing datasets.
+
+    In addition to `ConcatDataset`, it has the `get_info` method, which returns a list of information dictionaries
+    from the `get_info` method of `VideoDataset`.
+
+    Args:
+        datasets (sequence): List of datasets to be concatenated
+    """
+    def get_info(self):
+        """
+        Returns
+        -------
+        list of dict
+            list of info dictionaries for each `VideoDataset`.
+        """
+        return [dataset.get_info() for dataset in self.datasets]
