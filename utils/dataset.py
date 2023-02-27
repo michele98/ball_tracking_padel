@@ -242,7 +242,9 @@ class VideoDataset(Dataset):
         dict
             It contains the values of the arguments passed to the constructor.
         """
-        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+        output_dict = {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+        output_dict['len'] = self.__len__()
+        return output_dict
 
 
 class MyConcatDataset(ConcatDataset):
