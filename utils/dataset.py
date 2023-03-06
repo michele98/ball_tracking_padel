@@ -1,5 +1,6 @@
 import os
 import cv2
+import json
 import numpy as np
 import pandas as pd
 from typing import Tuple, Callable
@@ -246,6 +247,10 @@ class VideoDataset(Dataset):
         output_dict['len'] = self.__len__()
         return output_dict
 
+    def save_info(self, output_filename):
+        with open(output_filename, 'w') as f:
+            json.dump(self.get_info(), f, default=str, indent=2)
+
 
 class MyConcatDataset(ConcatDataset):
     r"""Dataset as a concatenation of multiple datasets.
@@ -266,3 +271,7 @@ class MyConcatDataset(ConcatDataset):
             list of info dictionaries for each `VideoDataset`.
         """
         return [dataset.get_info() for dataset in self.datasets]
+
+    def save_info(self, output_filename):
+        with open(output_filename, 'w') as f:
+            json.dump(self.get_info(), f, default=str, indent=2)
