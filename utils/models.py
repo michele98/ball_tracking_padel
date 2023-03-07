@@ -1,5 +1,9 @@
 import torch
 from torch import nn
+from torchvision.models import regnet_y_400mf, RegNet_Y_400MF_Weights
+from torchvision.models import regnet_y_800mf, RegNet_Y_800MF_Weights
+from torchvision.models import regnet_x_400mf, RegNet_X_400MF_Weights
+from torchvision.models import regnet_x_800mf, RegNet_X_800MF_Weights
 
 """Adapted from https://github.com/mareksubocz/TrackNet"""
 
@@ -140,3 +144,59 @@ class TrackNetV2NLL(TrackNetV2Base):
         x = self.last_logsoftmax(x)
 
         return x
+
+
+"""RegNetX and RegNetY taken from the following paper:
+    Designing Network Design Spaces (https://arxiv.org/abs/2003.13678)"""
+
+
+def my_regnet_y_400mf(sequence_length=3, grayscale=False, pretrained=True):
+    if pretrained:
+        model = regnet_y_400mf(weights=RegNet_Y_400MF_Weights)
+        model.fc = nn.Linear(in_features=440, out_features=2)
+    else:
+        model = regnet_y_400mf(num_classes=2)
+
+    channel_mult = 1 if grayscale else 3
+    model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+    return model
+
+
+def my_regnet_y_800mf(sequence_length=3, grayscale=False, pretrained=True):
+    if pretrained:
+        model = regnet_y_800mf(weights=RegNet_Y_800MF_Weights)
+        model.fc = nn.Linear(in_features=784, out_features=2)
+    else:
+        model = regnet_y_800mf(num_classes=2)
+
+    channel_mult = 1 if grayscale else 3
+    model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+    return model
+
+
+def my_regnet_x_400mf(sequence_length=3, grayscale=False, pretrained=True):
+    if pretrained:
+        model = regnet_x_400mf(weights=RegNet_X_400MF_Weights)
+        model.fc = nn.Linear(in_features=400, out_features=2)
+    else:
+        model = regnet_x_400mf(num_classes=2)
+
+    channel_mult = 1 if grayscale else 3
+    model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+    return model
+
+
+def my_regnet_x_800mf(sequence_length=3, grayscale=False, pretrained=True):
+    if pretrained:
+        model = regnet_y_800mf(weights=RegNet_X_800MF_Weights)
+        model.fc = nn.Linear(in_features=672, out_features=2)
+    else:
+        model = regnet_y_800mf(num_classes=2)
+
+    channel_mult = 1 if grayscale else 3
+    model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+    return model
