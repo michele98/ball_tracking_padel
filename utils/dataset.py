@@ -183,9 +183,6 @@ class VideoDataset(Dataset):
             heatmap[y:y + (size*2) + 1, x:x + (size*2) + 1] = g
             heatmap = heatmap[size:-size, size:-size]
 
-        if self.target_transform is not None:
-            heatmap = self.target_transform(heatmap)
-
         return heatmap
 
     def __len__(self):
@@ -222,10 +219,15 @@ class VideoDataset(Dataset):
 
             frames.append(frame)
             if not self.one_output_frame:
-                labels.append(self._generate_heatmap(frame_number) if self.output_heatmap else self._get_coordinates(frame_number))
+                label = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
+                if self.target_transform is not None:
+                    label = self.target_transform(label)
+                labels.append(label)
 
         if self.one_output_frame:
-            labels = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_coordinates(frame_number)
+            labels = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
+            if self.target_transform is not None:
+                labels = self.target_transform(labels)
 
         if type(frames[0]) is torch.Tensor:
             if self.concatenate_sequence:
