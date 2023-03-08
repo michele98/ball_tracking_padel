@@ -149,6 +149,9 @@ class TrackNetV2NLL(TrackNetV2Base):
 """RegNetX and RegNetY taken from the following paper:
     Designing Network Design Spaces (https://arxiv.org/abs/2003.13678)"""
 
+def load(model, path, device='cpu'):
+    model.load_state_dict(torch.load(path, map_location=device)['model_state_dict'])
+
 
 def my_regnet_y_400mf(sequence_length=3, grayscale=False, pretrained=True):
     if pretrained:
@@ -159,6 +162,8 @@ def my_regnet_y_400mf(sequence_length=3, grayscale=False, pretrained=True):
 
     channel_mult = 1 if grayscale else 3
     model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+    model.load = lambda path, device: load(model, path, device)
 
     return model
 
@@ -173,6 +178,8 @@ def my_regnet_y_800mf(sequence_length=3, grayscale=False, pretrained=True):
     channel_mult = 1 if grayscale else 3
     model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
 
+    model.load = lambda path, device: load(model, path, device)
+
     return model
 
 
@@ -186,6 +193,8 @@ def my_regnet_x_400mf(sequence_length=3, grayscale=False, pretrained=True):
     channel_mult = 1 if grayscale else 3
     model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
 
+    model.load = lambda path, device: load(model, path, device)
+
     return model
 
 
@@ -198,5 +207,7 @@ def my_regnet_x_800mf(sequence_length=3, grayscale=False, pretrained=True):
 
     channel_mult = 1 if grayscale else 3
     model.stem[0] = nn.Conv2d(sequence_length*channel_mult, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+    model.load = lambda path, device: load(model, path, device)
 
     return model
