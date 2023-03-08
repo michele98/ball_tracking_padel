@@ -82,6 +82,12 @@ def launch_training(device=None):
     data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size, shuffle=True)
     data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size)
 
+    if not os.path.exists(config._checkpoint_folder): os.makedirs(config._checkpoint_folder)
+
+    dataset_train.save_info(os.path.join(config._checkpoint_folder, 'dataset_train_info.json'))
+    dataset_val.save_info(os.path.join(config._checkpoint_folder, 'dataset_val_info.json'))
+    dataset_test.save_info(os.path.join(config._checkpoint_folder, 'dataset_test_info.json'))
+
     train_model(config.get_model(),
                 data_loader_train,
                 data_loader_val,
@@ -92,10 +98,6 @@ def launch_training(device=None):
                 additional_info={'dataset_train': dataset_train.get_info(),
                                  'dataset_val': dataset_val.get_info(),
                                  'dataset_test': dataset_test.get_info()})
-
-    dataset_train.save_info(os.path.join(config._checkpoint_folder, 'dataset_train_info.json'))
-    dataset_val.save_info(os.path.join(config._checkpoint_folder, 'dataset_val_info.json'))
-    dataset_test.save_info(os.path.join(config._checkpoint_folder, 'dataset_test_info.json'))
 
 
 if __name__ == '__main__':
