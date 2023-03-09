@@ -135,7 +135,8 @@ def compute_positions_noh(net : torch.nn.Module,
 def create_output_csv(training_configuration,
                       checkpoint_filename: str = None,
                       backup_checkpoint: bool = True,
-                      device='cpu'):
+                      device='cpu',
+                      split: str ='test'):
     """Create the output csv on the test set for the given training configuration
 
     Parameters
@@ -149,11 +150,15 @@ def create_output_csv(training_configuration,
         if True, copy the checkpoint in the output folder. By default True
     device : torch.device or str, optional
         by default 'cpu'
+    split : str, optional
+        `'train'`, `'val'` or `'test'`. By default `'test'`
 
     Raises
     ------
     FileNotFoundError
         If the checkpoint folder specified in `training_configuration` is has no checkpoints of if it does not exist
+    ValueError
+        If `split` is something other than `'train'`, `'val'` or `'test'`
     """
     config = training_configuration.Config()   # get training configuration
 
@@ -187,22 +192,31 @@ def create_output_csv(training_configuration,
     model.load(os.path.join(config._checkpoint_folder, checkpoint_filename), device=device)
     model.eval()
 
-    _, _, dataset_test = training_configuration.create_datasets()
-    data_loader_test = DataLoader(dataset_test, batch_size=config._batch_size)
+    dataset_train, dataset_val, dataset_test = training_configuration.create_datasets()
+    if split.lower() == 'train':
+        dataset = dataset_train
+    elif split.lower() == 'val':
+        dataset = dataset_val
+    elif split.lower() == 'test':
+        dataset = dataset_test
+    else:
+        raise ValueError("The split must be either 'train', 'val', or 'test'")
 
-    frames = [frame_num for dataset in dataset_test.datasets for frame_num in dataset._label_df['num'].values]
-    dataset_ids = [i for i, dataset in enumerate(dataset_test.datasets) for j in range(len(dataset))]
+    data_loader = DataLoader(dataset, batch_size=config._batch_size)
+
+    frames = [frame_num for dataset in dataset.datasets for frame_num in dataset._label_df['num'].values]
+    dataset_ids = [i for i, dataset in enumerate(dataset.datasets) for j in range(len(dataset))]
 
     output_dict = {'dataset_id': dataset_ids, 'frame_num': frames}
 
-    if dataset_test.get_info()[0]['output_heatmap']:
+    if dataset.get_info()[0]['output_heatmap']:
         true_positions, predicted_positions, min_values, max_values = compute_positions(
             model,
-            data_loader_test,
+            data_loader,
             device=device,
-            heatmaps_folder=os.path.join(output_folder, "heatmaps"))
+            heatmaps_folder=os.path.join(output_folder, f"heatmaps_{split.lower()}"))
 
-        image_size = dataset_test.get_info()[0]['image_size']
+        image_size = dataset.get_info()[0]['image_size']
         output_dict['min_values'] = min_values
         output_dict['max_values'] = max_values
         output_dict['x_true'] = true_positions[:,0]/image_size[1]
@@ -213,14 +227,14 @@ def create_output_csv(training_configuration,
     else:
         true_positions, predicted_positions = compute_positions_noh(
             model,
-            data_loader_test,
+            data_loader,
             device=device)
         output_dict['x_true'] = true_positions[:,0]
         output_dict['y_true'] = true_positions[:,1]
         output_dict['x_pred'] = predicted_positions[:,0]
         output_dict['y_pred'] = predicted_positions[:,1]
 
-    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder, 'test_output.csv'), index=False)
+    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder, f'output_{split.lower()}.csv'), index=False)
 
 
 def frame_generator(filename, start_frame=None, stop_frame=None, verbose=True):
