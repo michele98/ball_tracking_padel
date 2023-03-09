@@ -84,10 +84,11 @@ def train_one_epoch(net : torch.nn.Module,
 
         epoch_time = time.time() - start_time
         batch_time = epoch_time/(batch_idx+1)
+        remaining_time = batch_time * (len(dataloader_train)-batch_idx)
 
-        print(prefix + f"{batch_idx+1}/{len(dataloader_train)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, lr: {optimizer.param_groups[0]['lr']:.3g}, loss: {loss:.3g}".ljust(80), end = '\r')
+        print(prefix + f"{batch_idx+1}/{len(dataloader_train)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, remaining: {remaining_time:.0f}s, lr: {optimizer.param_groups[0]['lr']:.3g}, loss: {loss:.3g}".ljust(100), end = '\r')
 
-    print(prefix + f"{batch_idx+1}/{len(dataloader_train)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, lr: {optimizer.param_groups[0]['lr']:.3g}, loss: {loss:.3g}".ljust(80))
+    print(prefix + f"{batch_idx+1}/{len(dataloader_train)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, lr: {optimizer.param_groups[0]['lr']:.3g}, loss: {loss:.3g}".ljust(100))
     loss_np = (loss).detach().cpu().numpy()
 
     return loss_np
@@ -127,7 +128,6 @@ def validate(net : torch.nn.Module,
             labels = data[1].to(device)
 
             with torch.autocast(device_type='cuda', dtype=torch.float16):
-                
                 # Compute prediction (forward input in the model)
                 outputs = net(inputs)
 
@@ -141,10 +141,11 @@ def validate(net : torch.nn.Module,
 
             epoch_time = time.time() - start_time
             batch_time = epoch_time/(batch_idx+1)
+            remaining_time = batch_time * (len(dataloader_val)-batch_idx)
 
-            print(prefix + f'{batch_idx+1}/{len(dataloader_val)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, loss: {loss:.3g}'.ljust(80), end = '\r')
+            print(prefix + f"{batch_idx+1}/{len(dataloader_val)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, remaining: {remaining_time:.0f}s, loss: {loss:.3g}".ljust(80), end = '\r')
 
-    print(prefix + f'{batch_idx+1}/{len(dataloader_val)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, loss: {loss:.3g}'.ljust(80))
+    print(prefix + f"{batch_idx+1}/{len(dataloader_val)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, loss: {loss:.3g}".ljust(80))
     loss_np = (loss).detach().cpu().numpy()
 
     return loss_np
@@ -217,7 +218,7 @@ def train_model(net : torch.nn.Module,
 
     if scheduler is not None:
         scheduler = scheduler(optimizer=optimizer)
-        
+
         # Understand whether the LR scheduler must be update after each epoch (classic update) or after each batch (only for
         # two schedulers).
         scheduler_update_each_batch = False
