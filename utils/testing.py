@@ -1,11 +1,13 @@
 import os
 import cv2
 import time
+import shutil
 import numpy as np
 import pandas as pd
 
 import torch
 import torch.utils.data
+from torch.utils.data import DataLoader
 
 
 def get_maximum_coordinates(heatmaps):
@@ -80,6 +82,145 @@ def compute_positions(net : torch.nn.Module,
     print(prefix + f'{batch_idx+1}/{len(data_loader)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step'.ljust(80))
 
     return np.array(true_positions), np.array(predicted_positions), np.array(min_heatmap_values), np.array(max_heatmap_values)
+
+
+def compute_positions_noh(net : torch.nn.Module,
+                          data_loader : torch.utils.data.DataLoader,
+                          device : str = 'cpu',
+                          prefix : str = '',):
+    """Compute the position of the ball for all the frames in the dataloader.
+
+    Parameters
+    ----------
+    net : torch.nn.Module
+        the model to evaluate
+    data_loader : torch.utils.data.DataLoader
+        dataloader of the test set
+    device : torch.device, optional
+        cpu or cuda, by default cpu
+
+    Returns
+    -------
+    true_positions : np.ndarray
+        list of ground truth positions in (y, x) pixel coordinates
+    predicted_positions : np.ndarray
+        list of predicted positions in (y, x) pixel coordinates
+    """
+    net.eval() # set the model in evaluation mode
+
+    true_positions = []
+    predicted_positions = []
+
+    start_time = time.time()
+
+    with torch.no_grad():
+        for batch_idx, data in enumerate(data_loader):
+            inputs = data[0].to(device)
+            labels = data[1].numpy()
+
+            outputs = net(inputs).to('cpu').numpy()
+
+            for label, output in zip(labels, outputs):
+                true_positions.append(label[::-1])
+                predicted_positions.append(output[::-1])
+
+            epoch_time = time.time() - start_time
+            batch_time = epoch_time/(batch_idx+1)
+            print(prefix + f'{batch_idx+1}/{len(data_loader)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step'.ljust(80), end = '\r')
+    print(prefix + f'{batch_idx+1}/{len(data_loader)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step'.ljust(80))
+
+    return np.array(true_positions), np.array(predicted_positions)
+
+
+def create_output_csv(training_configuration,
+                      checkpoint_filename: str = None,
+                      backup_checkpoint: bool = True,
+                      device='cpu'):
+    """Create the output csv on the test set for the given training configuration
+
+    Parameters
+    ----------
+    training_configuration : module
+        one of the modules in `train_configurations`
+    checkpoint_filename : str, optional
+        name of the checkpoint file in the checkpoint folder specified by the training configuration.
+        If not provided, the the best checkpoint is used.
+    backup_checkpoint : bool, optional
+        if True, copy the checkpoint in the output folder. By default True
+    device : torch.device or str, optional
+        by default 'cpu'
+
+    Raises
+    ------
+    FileNotFoundError
+        If the checkpoint folder specified in `training_configuration` is has no checkpoints of if it does not exist
+    """
+    config = training_configuration.Config()   # get training configuration
+
+    if not os.path.exists(config._checkpoint_folder):
+        raise FileNotFoundError(f"Checkpoint folder not found: {config._checkpoint_folder}")
+
+    checkpoint_filenames = [name for name in os.listdir(config._checkpoint_folder) if name[-5:]=='.ckpt']
+
+    if len(checkpoint_filenames)==0:
+        raise FileNotFoundError(f"No checkpoint found in {config._checkpoint_folder}")
+
+    if checkpoint_filename is None:
+        for name in checkpoint_filenames:
+            if '_best' in name:
+                checkpoint_filename = name
+                break
+            checkpoint_filename = name
+
+    # create output folder inside the checkpoint folder
+    output_folder = '_'.join(checkpoint_filename.split('.')[0].split('_')[:2])
+    output_folder += '_results'
+    output_folder = os.path.join(config._checkpoint_folder, output_folder)
+
+    if not os.path.exists(output_folder): os.makedirs(output_folder)
+
+    if backup_checkpoint:
+        shutil.copy2(os.path.join(config._checkpoint_folder, checkpoint_filename), output_folder)
+
+    model = config.get_model()
+    model.to(device)
+    model.load(os.path.join(config._checkpoint_folder, checkpoint_filename), device=device)
+    model.eval()
+
+    _, _, dataset_test = training_configuration.create_datasets()
+    data_loader_test = DataLoader(dataset_test, batch_size=config._batch_size)
+
+    frames = [frame_num for dataset in dataset_test.datasets for frame_num in dataset._label_df['num'].values]
+    dataset_ids = [i for i, dataset in enumerate(dataset_test.datasets) for j in range(len(dataset))]
+
+    output_dict = {'dataset_id': dataset_ids, 'frame_num': frames}
+
+    if dataset_test.get_info()[0]['output_heatmap']:
+        true_positions, predicted_positions, min_values, max_values = compute_positions(
+            model,
+            data_loader_test,
+            device=device,
+            heatmaps_folder=os.path.join(output_folder, "heatmaps"))
+
+        image_size = dataset_test.get_info()[0]['image_size']
+        output_dict['min_values'] = min_values
+        output_dict['max_values'] = max_values
+        output_dict['x_true'] = true_positions[:,0]/image_size[1]
+        output_dict['y_true'] = true_positions[:,1]/image_size[0]
+        output_dict['x_pred'] = predicted_positions[:,0]/image_size[1]
+        output_dict['y_pred'] = predicted_positions[:,1]/image_size[0]
+
+    else:
+        true_positions, predicted_positions = compute_positions_noh(
+            model,
+            data_loader_test,
+            device=device)
+        output_dict['x_true'] = true_positions[:,0]
+        output_dict['y_true'] = true_positions[:,1]
+        output_dict['x_pred'] = predicted_positions[:,0]
+        output_dict['y_pred'] = predicted_positions[:,1]
+
+    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder, 'test_output.csv'), index=False)
 
 
 def frame_generator(filename, start_frame=None, stop_frame=None, verbose=True):
