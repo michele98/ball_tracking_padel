@@ -55,7 +55,7 @@ class VideoDataset(Dataset):
             Otherwise, the file named `labels.csv` will be used.
         output_heatmap : bool, optional
             if set to True, outputs a heatmap with the probability of finding the ball in a specific pixel.
-            Otherwise outputs only the ball coordinates. By default True
+            Otherwise outputs only the normalized ball pixel coordinates as (y, x). By default True
         transform : Callable, optional
             transformation to apply to the video frames
         target_transform : Callable, optional
