@@ -299,7 +299,7 @@ def frame_generator(filename, start_frame=None, stop_frame=None, verbose=True):
     cap.release()
 
 
-def annotate_frame(frame, predicted_position, true_position=None):
+def annotate_frame(frame, predicted_position, true_position=None, max_heatmap_value=None):
     """Put dots on the predicted (red) and true (green) ball positions.
 
     Parameters
@@ -310,6 +310,8 @@ def annotate_frame(frame, predicted_position, true_position=None):
         predicted ball position in pixel coordinates. The coordinate order is `(x, y)`
     true_position : tuple of float, optional
         true ball position in pixel coordinates. The coordinate order is `(x, y)`
+    max_heatmap_value : float, optional
+        the maximum value of the heatmap. Will be annotated in the upper right corner
 
     Returns
     -------
@@ -331,7 +333,17 @@ def annotate_frame(frame, predicted_position, true_position=None):
                                  color=(255, 0, 0),
                                  thickness=cv2.FILLED)
 
-    return cv2.addWeighted(annotated_frame, 0.6, frame, 0.4, 0)
+    annotated_frame = cv2.addWeighted(annotated_frame, 0.6, frame, 0.4, 0)
+
+    if max_heatmap_value is not None:
+        annotated_frame = cv2.putText(annotated_frame,
+                                      text=f"{max_heatmap_value:.2g}",
+                                      org=(int(0.85*frame.shape[1]), int(0.15*frame.shape[0])),
+                                      fontFace=cv2.FONT_HERSHEY_DUPLEX,
+                                      fontScale=1,
+                                      color=(255, 255, 255))
+
+    return annotated_frame
 
 
 def create_video(filename_src : str,
@@ -408,13 +420,15 @@ def create_video(filename_src : str,
             else:
                 true_position = None
 
+            max_heatmap_value = None
             # add heatmap visualization
             if heatmaps_folder is not None:
+                max_heatmap_value = position_df['max_values'][frame_index].values[0]
                 heatmap = cv2.imread(os.path.join(heatmaps_folder, f"{frame_index.values[0]}".zfill(6)+'.png'))
                 heatmap = cv2.resize(heatmap, (w, h))
                 frame = cv2.addWeighted(frame, 0.5, heatmap, 0.5, 0)
 
-            frame = annotate_frame(frame, predicted_position, true_position)
+            frame = annotate_frame(frame, predicted_position, true_position, max_heatmap_value)
 
         out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
