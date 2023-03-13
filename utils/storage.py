@@ -140,7 +140,7 @@ def load_checkpoint_dict(checkpoint_folder : str):
     if not os.path.exists(checkpoint_folder):
         raise FileNotFoundError(f"The folder {checkpoint_folder} does not exist.")
 
-    if len(os.listdir(checkpoint_folder)) == 0:
+    if len([i for i in os.listdir(checkpoint_folder) if i[-5:]=='.ckpt']) == 0:
         print(f"No checkpoint found in {checkpoint_folder}, using default initialization.")
         return None
 
