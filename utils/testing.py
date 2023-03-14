@@ -189,8 +189,11 @@ def create_output_csv(training_configuration,
     results_folder = os.path.join(config._checkpoint_folder, results_folder)
 
     if not os.path.exists(results_folder): os.makedirs(results_folder)
+    print(f"Saving results in {results_folder}")
 
     if backup_checkpoint:
+        print(f"Copying checkpoint {checkpoint_filename}")
+        print(f"From {config._checkpoint_folder} to {results_folder}")
         shutil.copy2(os.path.join(config._checkpoint_folder, checkpoint_filename), results_folder)
 
     model = config.get_model()
@@ -215,6 +218,7 @@ def create_output_csv(training_configuration,
 
     output_dict = {'dataset_id': dataset_ids, 'frame_num': frames}
 
+    print("\nComputing results:")
     if dataset.get_info()[0]['output_heatmap']:
         true_positions, predicted_positions, min_values, max_values = compute_positions(
             model,
@@ -241,6 +245,7 @@ def create_output_csv(training_configuration,
         output_dict['y_pred'] = predicted_positions[:,1]
 
     pd.DataFrame(output_dict).to_csv(os.path.join(results_folder, f'output_{split.lower()}.csv'), index=False)
+    print("done")
 
 
 def frame_generator(filename, start_frame=None, stop_frame=None, verbose=True):
