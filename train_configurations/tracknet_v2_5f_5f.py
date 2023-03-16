@@ -13,12 +13,12 @@ from utils.training import train_model
 "============== Configure here =============="
 class Config():
     # dataset config
-    _sequence_length = 6
-    _one_output_frame = True
+    _sequence_length = 5
+    _one_output_frame = False
     _image_size = (360, 640)
 
     # training
-    _checkpoint_folder = './checkpoints/tracknet_v2_mse_360_640_6f'
+    _checkpoint_folder = './checkpoints/tracknet_v2_mse_360_640_5f_5f'
     _batch_size = 2 # TODO: change for larger GPU
     _epochs = 20
 

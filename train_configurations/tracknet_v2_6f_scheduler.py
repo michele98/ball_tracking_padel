@@ -1,9 +1,12 @@
 import os
+from functools import partial
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
+
+from torch.optim.lr_scheduler import OneCycleLR
 
 from utils.dataset import VideoDataset, MyConcatDataset
 from utils.models import TrackNetV2MSE
@@ -18,7 +21,7 @@ class Config():
     _image_size = (360, 640)
 
     # training
-    _checkpoint_folder = './checkpoints/tracknet_v2_mse_360_640_6f'
+    _checkpoint_folder = './checkpoints/tracknet_v2_mse_360_640_6f_scheduler'
     _batch_size = 2 # TODO: change for larger GPU
     _epochs = 20
 
@@ -27,6 +30,9 @@ class Config():
 
     def get_loss(self):
         return F.mse_loss
+
+    def get_scheduler(self):
+        return partial(OneCycleLR, max_lr=1e-2, pct_start=0.2, epochs=self._epochs)
 
 "============================================"
 
@@ -89,6 +95,7 @@ def launch_training(device=None):
                 loss_function=config.get_loss(),
                 epochs=config._epochs,
                 checkpoint_folder=config._checkpoint_folder,
+                scheduler=partial(config.get_scheduler(), steps_per_epoch=len(data_loader_train)),
                 device=device,
                 additional_info={'dataset_train': dataset_train.get_info(),
                                  'dataset_val': dataset_val.get_info(),
