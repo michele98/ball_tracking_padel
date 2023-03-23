@@ -26,7 +26,9 @@ class VideoDataset(Dataset):
                  heatmap_mode = 'normalized',
                  drop_duplicate_frames: bool = True,
                  duplicate_equality_threshold: float = 0.97,
-                 one_output_frame: bool = True):
+                 one_output_frame: bool = True,
+                 grayscale: bool = False,
+                 preload_in_memory: bool = True):
         """Dataset that starts from a video and csv file with the ball position in each frame.
         The coordinates in the csv file are pixel coordinates, normalized between 0 and 1.
         Outputs a sequence of consecutive frames and the cooresponding ball pixel coordinates or heatmaps.
@@ -89,6 +91,12 @@ class VideoDataset(Dataset):
             if set to True, outputs a single heatmap only for the last frame.
             If set to False, outputs a heatmap for each input frame.
             By default True
+        grayscale : bool, optional
+            if true, the frames are loaded in grayscale. By default False
+            NOTE: FOR NOW IT IS DISABLED
+        preload_in_memory : bool, optional
+            Preloads the frames to RAM. It improves loading times in training, but could lead to high memory usage. By default True
+            NOTE: FOR NOW IT IS DISABLED
         """
         self.root = root
         self.output_heatmap = output_heatmap
@@ -105,6 +113,7 @@ class VideoDataset(Dataset):
         self._cap = cv2.VideoCapture(os.path.join(root, "video.mp4"))
         if image_size is None:
             _, frame = self._cap.read()
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             self.image_size = frame.shape[:2]
         else:
             self.image_size = image_size
@@ -116,28 +125,15 @@ class VideoDataset(Dataset):
         self.duplicate_equality_threshold = duplicate_equality_threshold
         self.one_output_frame = one_output_frame
 
-    def _read_frame(self, frame_number):
-            self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, frame = self._cap.read()
-            if ret:
-                resized_frame = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), self.image_size[::-1])
-                if self.transform is not None:
-                    resized_frame = self.transform(resized_frame)
-                return resized_frame
-            else:
-                print(f"Attention! Failed to read {frame_number}")
-                return None #TODO: make it handle this None
+        # TODO: implement grayscale option
+        self.grayscale = grayscale
+        self.preload_in_memory = preload_in_memory
+        self.last_read_frame = -1
 
-    def _equal_frames(self, frame_1, frame_2):
-        """Check if frames are equal. Returns False if either one is None."""
-        if frame_1 is None or frame_2 is None:
-            return False
-
-        absolute_difference = np.abs(frame_1 - frame_2)
-        num_equal = np.count_nonzero(absolute_difference==0)
-        num_tot = np.prod(absolute_difference.shape)
-
-        return num_equal/num_tot > self.duplicate_equality_threshold
+        # TODO: Make memory pre-loading work properly
+        # if preload_in_memory:
+        #     self._preload_frames()
+        #     self._cap.release()
 
     def _get_normalized_coordinates(self, frame_number):
         idx = self._label_df.loc[self._label_df['num']==frame_number].index
@@ -155,7 +151,6 @@ class VideoDataset(Dataset):
                 return None, None
 
     # TODO: utilize visibility info
-    # TODO: check padding info
     def _generate_heatmap(self, frame_number):
         size = 5*self.sigma
 
@@ -185,6 +180,53 @@ class VideoDataset(Dataset):
 
         return heatmap
 
+    def _equal_frames(self, frame_1, frame_2):
+        """Check if frames are equal. Returns False if either one is None."""
+        if frame_1 is None or frame_2 is None:
+            return False
+
+        absolute_difference = np.abs(frame_1 - frame_2)
+        num_equal = np.count_nonzero(absolute_difference==0)
+        num_tot = np.prod(absolute_difference.shape)
+
+        return num_equal/num_tot >= self.duplicate_equality_threshold
+
+    def _read_frame(self, frame_number):
+            if self.last_read_frame+1 != frame_number:
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            self.last_read_frame = frame_number
+
+            ret, frame = self._cap.read()
+            if ret:
+                return cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), self.image_size[::-1])
+            else:
+                print(f"Attention! Failed to read frame {frame_number}")
+                return None
+
+    def _preload_frames(self):
+        print("Loading frames:")
+
+        num_frames = len(self._label_df)
+        # num_channels = 1 if self.grayscale else 3
+        num_channels = 3
+        try:
+            self.frames = np.zeros((num_frames, *self.image_size, num_channels), dtype=np.uint8)
+        except MemoryError as e:
+            print(e)
+            print("Frames will be read from disk")
+            self.preload_in_memory = False
+
+        for frame_number in range(num_frames):
+            if frame_number%10==0:
+                print(f"Loaded {frame_number} of {num_frames}", end='\r')
+            self.frames[frame_number] = self._read_frame(frame_number)
+        print("Done".ljust(50))
+
+    def _get_frame(self, frame_number):
+        if self.preload_in_memory:
+            return self.frames[frame_number]
+        return self._read_frame(frame_number)
+
     def __len__(self):
         if self.overlap_sequences:
             return len(self._label_df)
@@ -210,13 +252,14 @@ class VideoDataset(Dataset):
 
         while i < self.sequence_length:
             frame_number = starting_frame_number+i+j
-            frame = self._read_frame(frame_number)
+            frame = self._get_frame(frame_number)
             if self._equal_frames(last_used_frame, frame) and self.drop_duplicate_frames:
                 j+=1
                 continue
             last_used_frame = frame
             i+=1
-
+            if self.transform is not None:
+                frame = self.transform(frame)
             frames.append(frame)
             if not self.one_output_frame:
                 label = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
