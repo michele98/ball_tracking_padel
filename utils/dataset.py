@@ -38,7 +38,6 @@ class VideoDataset(Dataset):
          - if `output_heatmap` is set to True a heatmap containing only `0` is returned
          - if `output_heatmap` is set to False `(None, None)` is returned
 
-
         Parameters
         ----------
         root : str
@@ -130,10 +129,36 @@ class VideoDataset(Dataset):
         self.preload_in_memory = preload_in_memory
         self.last_read_frame = -1
 
+        self._frames_to_preload = self._get_frames_to_preload()
+        self._preload_LUT = {f: i for i, f in enumerate(self._frames_to_preload)}
+
         # TODO: Make memory pre-loading work properly
-        # if preload_in_memory:
-        #     self._preload_frames()
-        #     self._cap.release()
+        if preload_in_memory:
+            self._preload_frames()
+            self._cap.release()
+
+    def _get_frames_to_preload(self):
+        frame_numbers = self._label_df['num'].values
+        old_frame = frame_numbers[0]
+        frames_to_preload = [old_frame]
+
+        margin=1 # margin for duplicate frames
+
+        # pad gaps in indices of labelled frames
+        for frame_number in frame_numbers[1:]:
+            if frame_number != old_frame+1:
+                for i in range(self.sequence_length+margin-1):
+                    to_add = old_frame+i+1
+                    if to_add == frame_number:
+                        break
+                    frames_to_preload.append(to_add)
+            frames_to_preload.append(frame_number)
+            old_frame = frame_number
+
+        for i in range(self.sequence_length+margin-1):
+            frames_to_preload.append(old_frame+i+1)
+
+        return frames_to_preload
 
     def _get_normalized_coordinates(self, frame_number):
         idx = self._label_df.loc[self._label_df['num']==frame_number].index
@@ -206,25 +231,25 @@ class VideoDataset(Dataset):
     def _preload_frames(self):
         print("Loading frames:")
 
-        num_frames = len(self._label_df)
         # num_channels = 1 if self.grayscale else 3
         num_channels = 3
         try:
-            self.frames = np.zeros((num_frames, *self.image_size, num_channels), dtype=np.uint8)
+            self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, num_channels), dtype=np.uint8)
         except MemoryError as e:
             print(e)
             print("Frames will be read from disk")
             self.preload_in_memory = False
+            return
 
-        for frame_number in range(num_frames):
-            if frame_number%10==0:
-                print(f"Loaded {frame_number} of {num_frames}", end='\r')
-            self.frames[frame_number] = self._read_frame(frame_number)
+        for i, frame_idx in enumerate(self._frames_to_preload):
+            if i%10==0:
+                print(f"Loaded {i} of {len(self._frames_to_preload)}", end='\r')
+            self.frames[i] = self._read_frame(frame_idx)
         print("Done".ljust(50))
 
     def _get_frame(self, frame_number):
         if self.preload_in_memory:
-            return self.frames[frame_number]
+            return self.frames[self._preload_LUT[frame_number]]
         return self._read_frame(frame_number)
 
     def __len__(self):
@@ -234,7 +259,7 @@ class VideoDataset(Dataset):
 
     def __getitem__(self, idx):
         if idx<0:
-            idx += len(self._label_df)
+            idx += self.__len__()
 
         if self.overlap_sequences:
             item_idx = idx
@@ -253,7 +278,7 @@ class VideoDataset(Dataset):
         while i < self.sequence_length:
             frame_number = starting_frame_number+i+j
             frame = self._get_frame(frame_number)
-            if self._equal_frames(last_used_frame, frame) and self.drop_duplicate_frames:
+            if self.drop_duplicate_frames and self._equal_frames(last_used_frame, frame):
                 j+=1
                 continue
             last_used_frame = frame
