@@ -94,8 +94,7 @@ class VideoDataset(Dataset):
             if true, the frames are loaded in grayscale. By default False
             NOTE: FOR NOW IT IS DISABLED
         preload_in_memory : bool, optional
-            Preloads the frames to RAM. It improves loading times in training, but could lead to high memory usage. By default True
-            NOTE: FOR NOW IT IS DISABLED
+            preload the frames to RAM. It improves loading times in training, but could lead to high memory usage. By default True
         """
         self.root = root
         self.output_heatmap = output_heatmap
@@ -127,15 +126,16 @@ class VideoDataset(Dataset):
         # TODO: implement grayscale option
         self.grayscale = grayscale
         self.preload_in_memory = preload_in_memory
+        self.preload_in_memory_hm = preload_in_memory
         self.last_read_frame = -1
 
         self._frames_to_preload = self._get_frames_to_preload()
         self._preload_LUT = {f: i for i, f in enumerate(self._frames_to_preload)}
 
-        # TODO: Make memory pre-loading work properly
         if preload_in_memory:
             self._preload_frames()
             self._cap.release()
+            self._preload_heatmaps()
 
     def _get_frames_to_preload(self):
         frame_numbers = self._label_df['num'].values
@@ -245,12 +245,35 @@ class VideoDataset(Dataset):
             if i%10==0:
                 print(f"Loaded {i} of {len(self._frames_to_preload)}", end='\r')
             self.frames[i] = self._read_frame(frame_idx)
+
+        print("Done".ljust(50))
+
+    def _preload_heatmaps(self):
+        print("Generating heatmaps:")
+
+        try:
+            self.heatmaps = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+        except MemoryError as e:
+            print(e)
+            print("Heatmaps will be generated each time")
+            self.preload_in_memory_hm = False
+            return
+
+        for i, frame_idx in enumerate(self._frames_to_preload):
+            if i%10==0:
+                print(f"Generated {i} of {len(self._frames_to_preload)}", end='\r')
+            self.heatmaps[i] = self._generate_heatmap(frame_idx)
         print("Done".ljust(50))
 
     def _get_frame(self, frame_number):
         if self.preload_in_memory:
             return self.frames[self._preload_LUT[frame_number]]
         return self._read_frame(frame_number)
+
+    def _get_heatmap(self, frame_number):
+        if self.preload_in_memory_hm:
+            return self.heatmaps[self._preload_LUT[frame_number]]
+        return self._generate_heatmap(frame_number)
 
     def __len__(self):
         if self.overlap_sequences:
@@ -287,13 +310,13 @@ class VideoDataset(Dataset):
                 frame = self.transform(frame)
             frames.append(frame)
             if not self.one_output_frame:
-                label = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
+                label = self._get_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
                 if self.target_transform is not None:
                     label = self.target_transform(label)
                 labels.append(label)
 
         if self.one_output_frame:
-            labels = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
+            labels = self._get_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
             if self.target_transform is not None:
                 labels = self.target_transform(labels)
 
