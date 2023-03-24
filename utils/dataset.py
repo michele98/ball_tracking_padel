@@ -288,7 +288,7 @@ class VideoDataset(Dataset):
                         self._equal_frames(frame, self._read_frame(frame_number+1))
                     ):
                     for k in range(1, self.sequence_length):
-                        if not self._padding_frames[i+k]:
+                        if i+k >= len(self._padding_frames) or not self._padding_frames[i+k]:
                             break
                         self._frames_to_preload[i+k]+=1
                 # offset index if frames are equal
