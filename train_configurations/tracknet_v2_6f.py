@@ -40,7 +40,7 @@ def create_datasets():
                           sequence_length=config._sequence_length,
                           heatmap_mode='image',
                           one_output_frame=config._one_output_frame,
-                          drop_duplicate_frames=True,
+                          duplicate_equality_threshold=0.97,
                           transform=ToTensor(),
                           target_transform=ToTensor())
 
@@ -48,17 +48,17 @@ def create_datasets():
 
     # training dataset
     dataset_train_list = []
-    dataset_train_list.append(VideoDataset(root="../datasets/dataset_finales_2020_en/", split='train', duplicate_equality_threshold=0.97, **dataset_params))
+    dataset_train_list.append(VideoDataset(root="../datasets/dataset_finales_2020_en/", split='train', drop_duplicate_frames=True, **dataset_params))
     for root in roots[:-1]:
-        dataset_train_list.append(VideoDataset(root=root, duplicate_equality_threshold=1, **dataset_params))
+        dataset_train_list.append(VideoDataset(root=root, drop_duplicate_frames=False, **dataset_params))
 
     dataset_train = MyConcatDataset(dataset_train_list)
 
     # validation dataset
     dataset_val_list = []
-    dataset_val_list.append(VideoDataset(root="../datasets/dataset_finales_2020_en/", split='val', duplicate_equality_threshold=0.97, **dataset_params))
+    dataset_val_list.append(VideoDataset(root="../datasets/dataset_finales_2020_en/", split='val', drop_duplicate_frames=True, **dataset_params))
     for root in roots[-1:]:
-        dataset_val_list.append(VideoDataset(root=root, duplicate_equality_threshold=1, **dataset_params))
+        dataset_val_list.append(VideoDataset(root=root, drop_duplicate_frames=False, **dataset_params))
 
     dataset_val = MyConcatDataset(dataset_val_list)
 
