@@ -122,43 +122,49 @@ class VideoDataset(Dataset):
         self.drop_duplicate_frames = drop_duplicate_frames
         self.duplicate_equality_threshold = duplicate_equality_threshold
         self.one_output_frame = one_output_frame
-
         # TODO: implement grayscale option
         self.grayscale = grayscale
-        self.preload_in_memory = preload_in_memory
-        self.preload_in_memory_hm = preload_in_memory
-        self.last_read_frame = -1
 
-        self._frames_to_preload = self._get_frames_to_preload()
-        self._preload_LUT = {f: i for i, f in enumerate(self._frames_to_preload)}
+        self._preload_in_memory = preload_in_memory
+        self._preload_in_memory_hm = output_heatmap and preload_in_memory
+        self._last_read_frame = -1
 
         if preload_in_memory:
-            self._preload_frames()
+            self._frames_to_preload, self._padding_frames = self._get_frames_to_preload()
+            self._preload_in_memory = self._allocate_frames()
+            if self.output_heatmap:
+                self._preload_in_memory_hm = self._allocate_heatmaps()
+
+            if self._preload_in_memory:
+                self._preload()
             self._cap.release()
-            self._preload_heatmaps()
 
     def _get_frames_to_preload(self):
-        frame_numbers = self._label_df['num'].values
-        old_frame = frame_numbers[0]
-        frames_to_preload = [old_frame]
-
-        margin=1 # margin for duplicate frames
+        frame_numbers = sorted(self._label_df['num'].values)
+        old_frame_number = frame_numbers[0]
+        frames_to_preload = [old_frame_number]
+        padding_frames = [False] # mask that says if the frame is labelled or not
 
         # pad gaps in indices of labelled frames
         for frame_number in frame_numbers[1:]:
-            if frame_number != old_frame+1:
-                for i in range(self.sequence_length+margin-1):
-                    to_add = old_frame+i+1
-                    if to_add == frame_number:
+            # if there is a gap, pad it
+            if frame_number > old_frame_number+1:
+                for i in range(self.sequence_length-1):
+                    pad_frame_number = old_frame_number+i+1
+                    if pad_frame_number == frame_number:
                         break
-                    frames_to_preload.append(to_add)
+                    frames_to_preload.append(pad_frame_number)
+                    padding_frames.append(True)
             frames_to_preload.append(frame_number)
-            old_frame = frame_number
+            padding_frames.append(False)
+            old_frame_number = frame_number
 
-        for i in range(self.sequence_length+margin-1):
-            frames_to_preload.append(old_frame+i+1)
+        # pad last frame
+        for i in range(self.sequence_length-1):
+            frames_to_preload.append(old_frame_number+i+1)
+            padding_frames.append(True)
 
-        return frames_to_preload
+        return frames_to_preload, padding_frames
 
     def _get_normalized_coordinates(self, frame_number):
         idx = self._label_df.loc[self._label_df['num']==frame_number].index
@@ -217,9 +223,9 @@ class VideoDataset(Dataset):
         return num_equal/num_tot >= self.duplicate_equality_threshold
 
     def _read_frame(self, frame_number):
-            if self.last_read_frame+1 != frame_number:
+            if self._last_read_frame+1 != frame_number:
                 self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            self.last_read_frame = frame_number
+            self._last_read_frame = frame_number
 
             ret, frame = self._cap.read()
             if ret:
@@ -228,67 +234,87 @@ class VideoDataset(Dataset):
                 print(f"Attention! Failed to read frame {frame_number}")
                 return None
 
-    def _preload_frames(self):
-        print("Loading frames:")
+    def _allocate_frames(self):
+        sample_frame = self._read_frame(self._label_df['num'][0])
+        if self.transform is not None:
+            sample_frame = self.transform(sample_frame)
 
-        # num_channels = 1 if self.grayscale else 3
-        num_channels = 3
         try:
-            self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, num_channels), dtype=np.uint8)
+            # channels_per_image = 1 if self.grayscale else 3
+            channels_per_image = 3
+            if torch.is_tensor(sample_frame):
+                self.frames = torch.empty((len(self._frames_to_preload), channels_per_image, *self.image_size), dtype=torch.float32)
+            else:
+                self.frames = np.empty((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
+            return True
         except MemoryError as e:
             print(e)
             print("Frames will be read from disk")
-            self.preload_in_memory = False
-            return
+            return False
 
-        for i, frame_idx in enumerate(self._frames_to_preload):
-            if i%10==0:
-                print(f"Loaded {i} of {len(self._frames_to_preload)}", end='\r')
-            self.frames[i] = self._read_frame(frame_idx)
+    def _allocate_heatmaps(self):
+        if not self.output_heatmap:
+            return False
 
-        print("Done".ljust(50))
-
-    def _preload_heatmaps(self):
-        print("Generating heatmaps:")
+        sample_heatmap = self._generate_heatmap(self._label_df['num'][0])
+        if self.target_transform is not None:
+            sample_heatmap = self.target_transform(sample_heatmap)
 
         try:
-            self.heatmaps = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+            if torch.is_tensor(sample_heatmap):
+                self.heatmaps = torch.empty((len(self._frames_to_preload), *self.image_size), dtype=torch.float32)
+            else:
+                self.heatmaps = np.empty((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+            return True
         except MemoryError as e:
             print(e)
-            print("Heatmaps will be generated each time")
-            self.preload_in_memory_hm = False
-            return
+            print("Heatmaps will be generated as needed")
+            return False
 
-        for i, frame_idx in enumerate(self._frames_to_preload):
-            if i%10==0:
-                print(f"Generated {i} of {len(self._frames_to_preload)}", end='\r')
-            self.heatmaps[i] = self._generate_heatmap(frame_idx)
+    def _preload(self):
+        print("Loading frames:")
+        self._frame_LUT = {}
+
+        j = 0 # index for keeping track of LUT offset due to duplicate frames
+        last_used_frame = None
+
+        for i, frame_number in enumerate(self._frames_to_preload):
+            frame = self._read_frame(frame_number)
+            if self.drop_duplicate_frames:
+                # increase frame number of the next padding frames if the next frame is a padding frame and equal to the current frame
+                if (
+                        i+1 < len(self._frames_to_preload) and
+                        self._padding_frames[i+1] and
+                        self._equal_frames(frame, self._read_frame(frame_number+1))
+                    ):
+                    for k in range(1, self.sequence_length):
+                        if not self._padding_frames[i+k]:
+                            break
+                        self._frames_to_preload[i+k]+=1
+                # offset index if frames are equal
+                if not self._padding_frames[i] and self._equal_frames(last_used_frame, frame):
+                    j += 1
+            last_used_frame = frame
+
+            if self.transform is not None:
+                frame = self.transform(frame)
+
+            self._frame_LUT[frame_number] = i-j
+            self.frames[i-j] = frame
+            if self.output_heatmap and self._preload_in_memory_hm:
+                heatmap = self._generate_heatmap(frame_number)
+                if self.target_transform is not None:
+                    heatmap = self.target_transform(heatmap)
+                self.heatmaps[i-j] = heatmap
+            print(f"Loaded {i} of {len(self._frames_to_preload)}", end='\r')
         print("Done".ljust(50))
-
-    def _get_frame(self, frame_number):
-        if self.preload_in_memory:
-            return self.frames[self._preload_LUT[frame_number]]
-        return self._read_frame(frame_number)
-
-    def _get_heatmap(self, frame_number):
-        if self.preload_in_memory_hm:
-            return self.heatmaps[self._preload_LUT[frame_number]]
-        return self._generate_heatmap(frame_number)
 
     def __len__(self):
         if self.overlap_sequences:
             return len(self._label_df)
         return len(self._label_df)//self.sequence_length
 
-    def __getitem__(self, idx):
-        if idx<0:
-            idx += self.__len__()
-
-        if self.overlap_sequences:
-            item_idx = idx
-        else:
-            item_idx = idx*self.sequence_length
-
+    def _get_item_old(self, item_idx):
         starting_frame_number = self._label_df['num'][item_idx]
 
         frames = []
@@ -300,7 +326,7 @@ class VideoDataset(Dataset):
 
         while i < self.sequence_length:
             frame_number = starting_frame_number+i+j
-            frame = self._get_frame(frame_number)
+            frame = self._read_frame(frame_number)
             if self.drop_duplicate_frames and self._equal_frames(last_used_frame, frame):
                 j+=1
                 continue
@@ -310,26 +336,64 @@ class VideoDataset(Dataset):
                 frame = self.transform(frame)
             frames.append(frame)
             if not self.one_output_frame:
-                label = self._get_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
+                label = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
                 if self.target_transform is not None:
                     label = self.target_transform(label)
                 labels.append(label)
 
         if self.one_output_frame:
-            labels = self._get_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
+            labels = self._generate_heatmap(frame_number) if self.output_heatmap else self._get_normalized_coordinates(frame_number)
             if self.target_transform is not None:
                 labels = self.target_transform(labels)
 
         if type(frames[0]) is torch.Tensor:
             if self.concatenate_sequence:
                 frames = torch.cat(frames, dim=0)
-                if not self.one_output_frame:
+                if self.output_heatmap and not self.one_output_frame:
                     labels = torch.cat(labels, dim=0)
 
         return frames, labels
 
+    def __getitem__(self, idx):
+        if idx<0:
+            idx += self.__len__()
+        if self.overlap_sequences:
+            item_idx = idx
+        else:
+            item_idx = idx*self.sequence_length
+
+        if not self._preload_in_memory:
+            return self._get_item_old(item_idx)
+
+        starting_frame_number = self._label_df['num'][item_idx]
+        i = self._frame_LUT[starting_frame_number]
+
+        # TODO: refactor this monstruosity
+        if self.output_heatmap:
+            if self._preload_in_memory_hm:
+                if self.one_output_frame:
+                    heatmaps = self.heatmaps[i+self.sequence_length-1]
+                    if torch.is_tensor(heatmaps):
+                        heatmaps = heatmaps.view(1, *heatmaps.shape)
+                else:
+                    heatmaps = self.heatmaps[i:i+self.sequence_length]
+            else:
+                heatmaps = self._generate_heatmap(starting_frame_number)
+        else:
+            if self.one_output_frame:
+                heatmaps = self._get_normalized_coordinates(starting_frame_number+self.sequence_length-1)
+            else:
+                heatmaps = [self._get_normalized_coordinates(starting_frame_number+i) for i in range(self.sequence_length)]
+
+        frames = self.frames[i:i+self.sequence_length]
+        if torch.is_tensor(frames):
+            frames = frames.view((3*self.sequence_length, *self.image_size))
+        else:
+            frames = frames.view((*self.image_size, 3*self.sequence_length))
+        return frames, heatmaps
+
     def get_info(self):
-        """Has all the info that was used to cheate the current instance of the `VideoDataset`.
+        """Has all the info that was used to cheate the current instance of `VideoDataset`.
 
         Returns
         -------
