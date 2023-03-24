@@ -247,7 +247,7 @@ class VideoDataset(Dataset):
             else:
                 self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
             return True
-        except MemoryError as e:
+        except (MemoryError, RuntimeError) as e:
             print(e)
             print("Frames will be read from disk")
             return False
@@ -266,13 +266,13 @@ class VideoDataset(Dataset):
             else:
                 self.heatmaps = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
             return True
-        except MemoryError as e:
+        except (MemoryError, RuntimeError) as e:
             print(e)
             print("Heatmaps will be generated as needed")
             return False
 
     def _preload(self):
-        print("Loading frames:")
+        print("Loading frames:", end = '\r')
         self._frame_LUT = {}
 
         j = 0 # index for keeping track of LUT offset due to duplicate frames
@@ -306,8 +306,8 @@ class VideoDataset(Dataset):
                 if self.target_transform is not None:
                     heatmap = self.target_transform(heatmap)
                 self.heatmaps[i-j] = heatmap
-            print(f"Loaded {i} of {len(self._frames_to_preload)}", end='\r')
-        print("Done".ljust(50))
+            print(f"Loading frames: {i+1} of {len(self._frames_to_preload)}", end='\r')
+        print(f"Loading frames: {i+1} of {len(self._frames_to_preload)}.".ljust(32), "Done")
 
     def __len__(self):
         if self.overlap_sequences:
