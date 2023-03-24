@@ -243,9 +243,9 @@ class VideoDataset(Dataset):
             # channels_per_image = 1 if self.grayscale else 3
             channels_per_image = 3
             if torch.is_tensor(sample_frame):
-                self.frames = torch.empty((len(self._frames_to_preload), channels_per_image, *self.image_size), dtype=torch.float32)
+                self.frames = torch.zeros((len(self._frames_to_preload), channels_per_image, *self.image_size), dtype=torch.float16)
             else:
-                self.frames = np.empty((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
+                self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
             return True
         except MemoryError as e:
             print(e)
@@ -262,9 +262,9 @@ class VideoDataset(Dataset):
 
         try:
             if torch.is_tensor(sample_heatmap):
-                self.heatmaps = torch.empty((len(self._frames_to_preload), *self.image_size), dtype=torch.float32)
+                self.heatmaps = torch.zeros((len(self._frames_to_preload), *self.image_size), dtype=torch.float16)
             else:
-                self.heatmaps = np.empty((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+                self.heatmaps = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
             return True
         except MemoryError as e:
             print(e)
@@ -382,8 +382,14 @@ class VideoDataset(Dataset):
         else:
             if self.one_output_frame:
                 heatmaps = self._get_normalized_coordinates(starting_frame_number+self.sequence_length-1)
+                if self.target_transform is not None:
+                    heatmaps = self.target_transform(heatmaps)
             else:
                 heatmaps = [self._get_normalized_coordinates(starting_frame_number+i) for i in range(self.sequence_length)]
+                if self.target_transform is not None:
+                    for i in range(len(heatmaps)):
+                        heatmaps[i] = self.target_transform(heatmaps[i])
+
 
         frames = self.frames[i:i+self.sequence_length]
         if torch.is_tensor(frames):
