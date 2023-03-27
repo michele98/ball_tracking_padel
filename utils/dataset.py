@@ -78,10 +78,11 @@ class VideoDataset(Dataset):
             Can be either:
              - `'normalized'`: the heatmap is a Gaussian normal distribution, i.e. the integral over the whole heatmap is 1;
              - `'image'`: the maximum value is set to 255, and the data type is uint8.
+
             By default `'normalized'`
         drop_duplicate_frames : bool, optional
             Choose wheter to drop duplicate frames from the frame sequence.
-            Attention, this might make the `__len__()` method unreliable, since the number of duplicate frames is not known beforehand.
+            Attention, when sampling, duplicate frames are treated as separate frames.
             By default True
         duplicate_equality_threshold : float, optional
             Frames are considered equal if the fraction of pixels with the same value between 2 frames is larger than this.
@@ -91,8 +92,7 @@ class VideoDataset(Dataset):
             If set to False, outputs a heatmap for each input frame.
             By default True
         grayscale : bool, optional
-            if true, the frames are loaded in grayscale. By default False
-            NOTE: FOR NOW IT IS DISABLED
+            if True, the frames are loaded in grayscale. By default False
         preload_in_memory : bool, optional
             preload the frames to RAM. It improves loading times in training, but could lead to high memory usage. By default True
         """
@@ -228,8 +228,9 @@ class VideoDataset(Dataset):
             self._last_read_frame = frame_number
 
             ret, frame = self._cap.read()
+            flag = cv2.COLOR_BGR2GRAY if self.grayscale else cv2.COLOR_BGR2RGB
             if ret:
-                return cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), self.image_size[::-1])
+                return cv2.resize(cv2.cvtColor(frame, flag), self.image_size[::-1])
             else:
                 print(f"Attention! Failed to read frame {frame_number}")
                 return None
@@ -238,14 +239,15 @@ class VideoDataset(Dataset):
         sample_frame = self._read_frame(self._label_df['num'][0])
         if self.transform is not None:
             sample_frame = self.transform(sample_frame)
-
         try:
-            # channels_per_image = 1 if self.grayscale else 3
-            channels_per_image = 3
+            channels_per_image = 1 if self.grayscale else 3
             if torch.is_tensor(sample_frame):
                 self.frames = torch.zeros((len(self._frames_to_preload), channels_per_image, *self.image_size), dtype=torch.float16)
             else:
-                self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
+                if self.grayscale:
+                    self.frames = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+                else:
+                    self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
             return True
         except (MemoryError, RuntimeError) as e:
             print(e)
@@ -259,7 +261,6 @@ class VideoDataset(Dataset):
         sample_heatmap = self._generate_heatmap(self._label_df['num'][0])
         if self.target_transform is not None:
             sample_heatmap = self.target_transform(sample_heatmap)
-
         try:
             if torch.is_tensor(sample_heatmap):
                 self.heatmaps = torch.zeros((len(self._frames_to_preload), *self.image_size), dtype=torch.float16)
@@ -390,12 +391,15 @@ class VideoDataset(Dataset):
                     for i in range(len(heatmaps)):
                         heatmaps[i] = self.target_transform(heatmaps[i])
 
-
         frames = self.frames[i:i+self.sequence_length]
+        channels_per_image = 1 if self.grayscale else 3
         if torch.is_tensor(frames):
-            frames = frames.view((3*self.sequence_length, *self.image_size))
+            frames = frames.view((channels_per_image*self.sequence_length, *self.image_size))
         else:
-            frames = frames.view((*self.image_size, 3*self.sequence_length))
+            if self.grayscale:
+                frames = frames.reshape((self.sequence_length, *self.image_size))
+            else:
+                frames = frames.reshape((self.sequence_length, *self.image_size, channels_per_image))
         return frames, heatmaps
 
     def get_info(self):
