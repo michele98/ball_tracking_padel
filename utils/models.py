@@ -43,6 +43,8 @@ class TrackNetV2Base(nn.Module):
         super().__init__()
 
         self.sequence_length = sequence_length
+        self.grayscale = grayscale
+        self.dropout = dropout
 
         # VGG16
         if grayscale:
@@ -119,6 +121,43 @@ class TrackNetV2MSE(TrackNetV2Base):
 
         x = self.last_conv(x)
         x = self.last_sigmoid(x)
+
+        return x
+
+
+class TrackNetV2RNN(TrackNetV2Base):
+    def __init__(self, *args, one_output_frame, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.one_output_frame=one_output_frame
+
+        # VGG16
+        if self.grayscale:
+            self.vgg_conv1 = self._make_convolution_layer(self.sequence_length, 64, 2, dropout_rate=self.dropout)
+        else:
+            self.vgg_conv1 = self._make_convolution_layer(2 + self.sequence_length, 64, 2, dropout_rate=self.dropout)
+
+        # TODO: implement the true RNN taking the previous output as input, instead of the ground truth
+        # self.previous_state = None
+        self.last_conv = nn.Conv2d(64, 1, kernel_size=(1,1), padding='same')
+        self.last_sigmoid = nn.Sigmoid()
+
+    def forward(self, x, gt_probability):
+        # TODO: implement ground_truth_probability (see above)
+        # if torch.rand()<gt_probability and self.previous_state is not None:
+        #     x[:, :self.sequence_length-1] = self.previous_state
+
+        x = super().forward(x)
+
+        x = self.last_conv(x)
+        x = self.last_sigmoid(x)
+
+        if not self.one_output_frame:
+            if len(input.shape) == 4:
+                x = torch.concat((input[:,:self.sequence_length-1], x), axis=1)
+            else:
+                x = torch.concat((input[:self.sequence_length-1], x), axis=0)
+
+        #self.previous_state = x
 
         return x
 

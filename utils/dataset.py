@@ -419,6 +419,45 @@ class VideoDataset(Dataset):
             json.dump(self.get_info(), f, default=str, indent=2)
 
 
+class VideoDatasetRNN(VideoDataset):
+    def __init__(self, *args, **kwargs):
+        """Dataset for RNN. The input consists of the previous heatmaps and the current frame.
+        The output is the heatmap to predict.
+        The following parameters are forced:
+         - `output_heatmap=True`
+         - `heatmap_mode='image'`
+         - `preload_in_memory=True`
+
+        Parameters
+        ----------
+        **kwargs : passed to :class:`VideoDataset`
+        """
+        super().__init__(*args, output_heatmap=True, heatmap_mode='image', preload_in_memory=True, **kwargs)
+
+    def __getitem__(self, idx):
+        if idx<0:
+            idx += self.__len__()
+        if self.overlap_sequences:
+            item_idx = idx
+        else:
+            item_idx = idx*self.sequence_length
+
+        i = self._frame_LUT[self._label_df['num'][item_idx]]
+
+        frame = self.frames[i+self.sequence_length-1]
+        heatmaps = self.heatmaps[i:i+self.sequence_length]
+
+        input = (heatmaps[:-1], frame)
+        output = heatmaps[-1] if self.one_output_frame else heatmaps
+
+        if torch.is_tensor(frame) and torch.is_tensor(heatmaps):
+            if self.one_output_frame:
+                output = output.view(1, *self.image_size)
+            return torch.concat(input), output
+
+        return input, output
+
+
 class MyConcatDataset(ConcatDataset):
     r"""Dataset as a concatenation of multiple datasets.
 
