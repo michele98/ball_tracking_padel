@@ -242,12 +242,12 @@ class VideoDataset(Dataset):
         try:
             channels_per_image = 1 if self.grayscale else 3
             if torch.is_tensor(sample_frame):
-                self.frames = torch.zeros((len(self._frames_to_preload), channels_per_image, *self.image_size), dtype=torch.float16)
+                self._frames = torch.zeros((len(self._frames_to_preload), channels_per_image, *self.image_size), dtype=torch.float16)
             else:
                 if self.grayscale:
-                    self.frames = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+                    self._frames = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
                 else:
-                    self.frames = np.zeros((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
+                    self._frames = np.zeros((len(self._frames_to_preload), *self.image_size, channels_per_image), dtype=np.uint8)
             return True
         except (MemoryError, RuntimeError) as e:
             print(e)
@@ -263,9 +263,9 @@ class VideoDataset(Dataset):
             sample_heatmap = self.target_transform(sample_heatmap)
         try:
             if torch.is_tensor(sample_heatmap):
-                self.heatmaps = torch.zeros((len(self._frames_to_preload), *self.image_size), dtype=torch.float16)
+                self._heatmaps = torch.zeros((len(self._frames_to_preload), *self.image_size), dtype=torch.float16)
             else:
-                self.heatmaps = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
+                self._heatmaps = np.zeros((len(self._frames_to_preload), *self.image_size), dtype=np.uint8)
             return True
         except (MemoryError, RuntimeError) as e:
             print(e)
@@ -301,12 +301,12 @@ class VideoDataset(Dataset):
                 frame = self.transform(frame)
 
             self._frame_LUT[frame_number] = i-j
-            self.frames[i-j] = frame
+            self._frames[i-j] = frame
             if self.output_heatmap and self._preload_in_memory_hm:
                 heatmap = self._generate_heatmap(frame_number)
                 if self.target_transform is not None:
                     heatmap = self.target_transform(heatmap)
-                self.heatmaps[i-j] = heatmap
+                self._heatmaps[i-j] = heatmap
             print(f"Loading frames: {i+1} of {len(self._frames_to_preload)}", end='\r')
         print(f"Loading frames: {i+1} of {len(self._frames_to_preload)}.".ljust(32), "Done")
 
@@ -373,11 +373,11 @@ class VideoDataset(Dataset):
         if self.output_heatmap:
             if self._preload_in_memory_hm:
                 if self.one_output_frame:
-                    heatmaps = self.heatmaps[i+self.sequence_length-1]
+                    heatmaps = self._heatmaps[i+self.sequence_length-1]
                     if torch.is_tensor(heatmaps):
                         heatmaps = heatmaps.view(1, *heatmaps.shape)
                 else:
-                    heatmaps = self.heatmaps[i:i+self.sequence_length]
+                    heatmaps = self._heatmaps[i:i+self.sequence_length]
             else:
                 heatmaps = self._generate_heatmap(starting_frame_number)
         else:
@@ -391,7 +391,7 @@ class VideoDataset(Dataset):
                     for i in range(len(heatmaps)):
                         heatmaps[i] = self.target_transform(heatmaps[i])
 
-        frames = self.frames[i:i+self.sequence_length]
+        frames = self._frames[i:i+self.sequence_length]
         channels_per_image = 1 if self.grayscale else 3
         if torch.is_tensor(frames):
             frames = frames.view((channels_per_image*self.sequence_length, *self.image_size))
@@ -444,8 +444,8 @@ class VideoDatasetRNN(VideoDataset):
 
         i = self._frame_LUT[self._label_df['num'][item_idx]]
 
-        frame = self.frames[i+self.sequence_length-1]
-        heatmaps = self.heatmaps[i:i+self.sequence_length]
+        frame = self._frames[i+self.sequence_length-1]
+        heatmaps = self._heatmaps[i:i+self.sequence_length]
 
         input = (heatmaps[:-1], frame)
         output = heatmaps[-1] if self.one_output_frame else heatmaps
