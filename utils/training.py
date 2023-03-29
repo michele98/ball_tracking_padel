@@ -50,14 +50,14 @@ def train_one_epoch(net : torch.nn.Module,
     start_time = time.time()
 
     for batch_idx, data in enumerate(dataloader_train):
-        inputs = data[0].to(device)
-        labels = data[1].to(device)
+        inputs = [data[i].to(device) for i in range(len(data)-1)]
+        labels = data[-1].to(device)
 
         optimizer.zero_grad()
 
         with torch.autocast(device_type='cuda', dtype=torch.float16):  # 16 bit precision (for using less memory)
             # Compute prediction (forward input in the model)
-            outputs = net(inputs)
+            outputs = net(*inputs)
 
             # Compute prediction error with the loss function
             error = loss_function(outputs, labels)
@@ -124,12 +124,12 @@ def validate(net : torch.nn.Module,
 
     with torch.no_grad():
         for batch_idx, data in enumerate(dataloader_val):
-            inputs = data[0].to(device)
-            labels = data[1].to(device)
+            inputs = [data[i].to(device) for i in range(len(data)-1)]
+            labels = data[-1].to(device)
 
             with torch.autocast(device_type='cuda', dtype=torch.float16):
                 # Compute prediction (forward input in the model)
-                outputs = net(inputs)
+                outputs = net(*inputs)
 
                 # Compute prediction error with the loss function
                 error = loss_function(outputs, labels)
