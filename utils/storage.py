@@ -78,7 +78,14 @@ def save_checkpoint(checkpoint_dict, checkpoint_folder, clear_previous_checkpoin
     filename = 'checkpoint_' + f"{checkpoint_dict['epoch']}".zfill(4)
 
     # put best flag
-    if abs(checkpoint_dict['loss_history_val'][-1]-min(checkpoint_dict['loss_history_val']))<1e-8:
+    loss_history_val = checkpoint_dict['loss_history_val']
+    clean_history = [element for element in loss_history_val if not np.isnan(element)]
+    if (
+        len(clean_history)==0 or (
+            not np.isnan(loss_history_val[-1]) and
+            abs(loss_history_val[-1]-min(clean_history))<1e-8
+            )
+        ):
         filename += '_best'
 
     filename += '.ckpt'
