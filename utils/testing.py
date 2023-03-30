@@ -414,7 +414,7 @@ def create_video(filename_src : str,
                           frameSize=(w, h))
 
     for i, frame in enumerate(frame_gen):
-        frame_index = position_df.loc[position_df['frame_num']==i+start_frame-1].index
+        frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1].index
         if len(frame_index) == 1:
             x_pred = int(position_df['x_pred'][frame_index]*frame.shape[1])
             y_pred = int(position_df['y_pred'][frame_index]*frame.shape[0])
