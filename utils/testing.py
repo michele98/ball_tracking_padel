@@ -64,7 +64,8 @@ def compute_positions(net : torch.nn.Module,
             inputs = data[0].to(device)
             labels = data[1].numpy()
 
-            outputs = net(inputs).to('cpu').numpy()
+            with torch.autocast(device_type=str(device), dtype=torch.float16):
+                outputs = net(inputs).to('cpu').numpy()
 
             for i, (label, output) in enumerate(zip(labels, outputs)):
                 true_positions.append(get_maximum_coordinates(label[-1]))
