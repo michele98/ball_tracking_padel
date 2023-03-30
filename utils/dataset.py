@@ -122,7 +122,6 @@ class VideoDataset(Dataset):
         self.drop_duplicate_frames = drop_duplicate_frames
         self.duplicate_equality_threshold = duplicate_equality_threshold
         self.one_output_frame = one_output_frame
-        # TODO: implement grayscale option
         self.grayscale = grayscale
 
         self._preload_in_memory = preload_in_memory
@@ -427,12 +426,38 @@ class VideoDatasetRNN(VideoDataset):
          - `output_heatmap=True`
          - `heatmap_mode='image'`
          - `preload_in_memory=True`
+         - `drop_duplicate_frames=False`
 
         Parameters
         ----------
         **kwargs : passed to :class:`VideoDataset`
         """
         super().__init__(*args, output_heatmap=True, heatmap_mode='image', preload_in_memory=True, **kwargs)
+
+    def _get_frames_to_preload(self):
+        # here we want to pad the frame before the first labeled one instead of after the last labelled
+        frame_numbers = sorted(self._label_df['num'].values)
+        old_frame_number = frame_numbers[0]
+
+        # pad first frames
+        frames_to_preload = [old_frame_number-i for i in reversed(range(self.sequence_length))]
+        padding_frames = [True for _ in range(self.sequence_length-1)] + [False] # mask that says if the frame is labelled or not
+
+        # pad gaps in indices of labelled frames
+        for frame_number in frame_numbers[1:]:
+            # if there is a gap, pad it
+            if frame_number > old_frame_number+1:
+                for i in reversed(range(self.sequence_length-1)):
+                    pad_frame_number = frame_number-i-1
+                    if pad_frame_number <= old_frame_number:
+                        continue
+                    frames_to_preload.append(pad_frame_number)
+                    padding_frames.append(True)
+            frames_to_preload.append(frame_number)
+            padding_frames.append(False)
+            old_frame_number = frame_number
+
+        return frames_to_preload, padding_frames
 
     def __getitem__(self, idx):
         if idx<0:
@@ -444,8 +469,8 @@ class VideoDatasetRNN(VideoDataset):
 
         i = self._frame_LUT[self._label_df['num'][item_idx]]
 
-        frame = self._frames[i+self.sequence_length-1]
-        heatmaps = self._heatmaps[i:i+self.sequence_length]
+        frame = self._frames[i]
+        heatmaps = self._heatmaps[i-self.sequence_length+1:i+1]
 
         input = (heatmaps[:-1], frame)
         output = heatmaps[-1] if self.one_output_frame else heatmaps

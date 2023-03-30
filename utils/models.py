@@ -141,10 +141,23 @@ class TrackNetV2RNN(TrackNetV2Base):
         self.last_conv = nn.Conv2d(64, 1, kernel_size=(1,1), padding='same')
         self.last_sigmoid = nn.Sigmoid()
 
-        # self.initial_state=None
+        self.internal_state = None
 
-    def forward(self, x, gt_probability=0):
-        # TODO: implement ground_truth_probability (see above)
+    def forward(self, x, deleted_frames=None, use_ground_truth=None):
+        if self.internal_state is None:
+            print('internal')
+            # initialize previous state
+            self.internal_state = torch.zeros(x.shape[0], self.sequence_length-1, x.shape[2], x.shape[3], device=next(self.parameters()).device)
+        if use_ground_truth is not None:
+            # set input state to previous state according to use_ground_truth
+            x[:,:self.sequence_length-1][use_ground_truth==0] = self.internal_state[use_ground_truth==0]
+        if deleted_frames is not None:
+            # set frames to delete to 0
+            for i in range(x.shape[0]):
+                if deleted_frames[i] == 0:
+                    continue
+                s = int(deleted_frames[i])
+                x[i,:s] = torch.zeros(s, x.shape[2], x.shape[3], device=next(self.parameters()).device)
 
         x = super().forward(x)
 
@@ -157,7 +170,11 @@ class TrackNetV2RNN(TrackNetV2Base):
             else:
                 x = torch.concat((input[:self.sequence_length-1], x), axis=0)
 
-        #self.previous_state = x
+        # shift previous state to the left
+        #self.previous_state[:, :self.sequence_length-2] = self.previous_state[:, 1:self.sequence_length-1]
+        self.internal_state = torch.roll(self.internal_state, shifts=-1, dims=1)
+        # assign current output to the previous state
+        self.internal_state[:, -1:] = x
 
         return x
 

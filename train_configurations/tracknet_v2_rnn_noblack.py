@@ -1,68 +1,15 @@
 import os
 import numpy as np
-from functools import partial
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
+from torch.utils.data._utils.collate import default_collate
 
 from utils.dataset import VideoDatasetRNN, MyConcatDataset
 from utils.models import TrackNetV2RNN
 from utils.training import train_model
-from train_configurations.utils import collate_fn_rnn
-
-"""Training schedule description
-TODO: implement the RNN part
-
-Definitions:
- - tc: total clearing (set all previous heatmaps to 0)
- - c:  clearing (set the previous input heatmaps to 0 from the first to the nth with a uniform probability distribution)
- - gt: use ground truth for the previous heatmaps
-Note: gt is independent of tc and c. tc and c are not: if tc is True, c is automatically False.
-We have to define:
- - p(tc)
- - p(c): to note, since we impose p(c|tc)=0, we have to sample p(c|not tc), for which we have p(c|not tc)=p(c)/(1-p(tc))
- - p(gt)
-
-The training schedule is divided in 3 phases, each of which has 2 subphases:
-
-Phase 1 (ground truth regime):
- - lr = 1e-3
- - Epochs 1-5:
-   - p(tc) = 0.8
-   - p(c)  = 0.1
-   - p(gt) = 1
- - Epochs 6-10:
-   - p(tc) = 0
-   - p(c)  = 0.5
-   - p(gt) = 0.8
-
-Phase 2 (hybrid regime):
- - lr = 1e-4
- - Epochs 11-15:
-   - p(tc) = 0
-   - p(c)  = 1/3
-   - p(gt) = 1/2
- - Epochs 15-20:
-   - p(tc) = 0
-   - p(c)  = 1/5
-   - p(gt) = 1/5
-
-Phase 3 (RNN regime):
- - lr = 1e-5
- - Epochs 21-25:
-   - p(tc) = 0
-   - p(c)  = 1/30
-   - p(gt) = 1/30
- - Epochs 25-30:
-   - p(tc) = 0
-   - p(c)  = 1/200
-   - p(gt) = 0
-
-The idea is to make the model recognize the ball in the first phase,
-and then to make it transition to tracking the ball from phase 2 to phase 3.
-"""
 
 
 "============== Configure here =============="
@@ -74,10 +21,9 @@ class Config():
     _grayscale = False
 
     # training
-    _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640'
+    _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640_noblack'
     _batch_size = 2
     _epochs = 20
-    _clear_probability = 0.3
 
     def get_model(self):
         return TrackNetV2RNN(sequence_length=self._sequence_length, one_output_frame=self._one_output_frame, grayscale=self._grayscale)
@@ -134,13 +80,8 @@ def launch_training(device=None):
 
     dataset_train, dataset_val, dataset_test = create_datasets()
 
-    collate_fn = partial(collate_fn_rnn,
-                         clear_probability=config._clear_probability,
-                         gt_probability=1,
-                         sequence_length=config._sequence_length)
-
-    data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size, collate_fn=collate_fn)
-    data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size, collate_fn=collate_fn)
+    data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size, shuffle=True)
+    data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size)
 
     if not os.path.exists(config._checkpoint_folder): os.makedirs(config._checkpoint_folder)
 
