@@ -1,5 +1,6 @@
 import os
 import cv2
+import json
 import time
 import shutil
 import numpy as np
@@ -501,20 +502,14 @@ def save_labeled_video(training_configuration,
     position_df_filename = os.path.join(results_folder, f'output_{split.lower()}.csv')
     position_df = pd.read_csv(position_df_filename)
 
-    dataset_train, dataset_val, dataset_test = training_configuration.create_datasets()
-    if split.lower() == 'train':
-        dataset = dataset_train
-    elif split.lower() == 'val':
-        dataset = dataset_val
-    elif split.lower() == 'test':
-        dataset = dataset_test
-    else:
+    if split.lower() != 'train' and split.lower() != 'val' and split.lower() != 'test':
         raise ValueError("The split must be either 'train', 'val', or 'test'")
 
     heatmaps_folder = os.path.join(results_folder, f'heatmaps_{split.lower()}')
     heatmaps_folder = heatmaps_folder if os.path.exists(heatmaps_folder) else None
 
-    dataset_info = dataset.get_info()
+    with open(os.path.join(config._checkpoint_folder, f"dataset_{split.lower()}_info.json"), 'r') as f:
+        dataset_info = json.load(f)
 
     if dataset_id is None:
         dataset_id = [i for i in range(len(dataset_info))]
