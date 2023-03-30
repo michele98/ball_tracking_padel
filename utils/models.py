@@ -141,10 +141,10 @@ class TrackNetV2RNN(TrackNetV2Base):
         self.last_conv = nn.Conv2d(64, 1, kernel_size=(1,1), padding='same')
         self.last_sigmoid = nn.Sigmoid()
 
-    def forward(self, x, gt_probability):
+        # self.initial_state=None
+
+    def forward(self, x, gt_probability=0):
         # TODO: implement ground_truth_probability (see above)
-        # if torch.rand()<gt_probability and self.previous_state is not None:
-        #     x[:, :self.sequence_length-1] = self.previous_state
 
         x = super().forward(x)
 

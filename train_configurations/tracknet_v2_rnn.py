@@ -23,7 +23,8 @@ class Config():
     # training
     _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640'
     _batch_size = 2
-    _epochs = 10
+    _epochs = 20
+    _clear_probability = 0.3
 
     def get_model(self):
         return TrackNetV2RNN(sequence_length=self._sequence_length, one_output_frame=self._one_output_frame, grayscale=self._grayscale)
@@ -49,6 +50,7 @@ def create_datasets():
 
     roots = [f'../datasets/dataset_lluis/game{i+1}' for i in range(5)]
     # roots = [f'../datasets/dataset_lluis/game{i}' for i in [2, 1]]
+    # roots = [f'../datasets/prova' for i in [2, 1]]
 
     # training dataset
     dataset_train_list = []
@@ -72,17 +74,23 @@ def create_datasets():
     return dataset_train, dataset_val, dataset_test
 
 
-def collate_fn(batch):
-    frames, labels = default_collate(batch)
-    return frames, torch.ones(len(batch))*0.9, labels
-
-
 def launch_training(device=None):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     config = Config()
 
     dataset_train, dataset_val, dataset_test = create_datasets()
+
+    def collate_fn(batch):
+        frames, labels = default_collate(batch)
+
+        x = frames.clone()
+
+        for i in range(len(batch)):
+            if torch.rand(1) < config._clear_probability:
+                to_delete = torch.randint(low=1, high=config._sequence_length, size=(1,))
+                x[i, :to_delete] = torch.zeros(to_delete, x.shape[2], x.shape[3])
+        return x, torch.zeros(len(batch)), labels
 
     data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size, collate_fn=collate_fn)
     data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size, collate_fn=collate_fn)
