@@ -9,7 +9,7 @@ def collate_fn_rnn(batch,
                    ground_truth_probability: list[float],
                    sequence_length: int):
     """Base collate function to pass to a DataLoader for TrackNetV2RNN.
-    When passing to a DataLoader, fix `clear_probability` and `sequence_length` using functools.partial
+    When passing to a DataLoader, fix all the parameters other than `batch`
 
     Parameters
     ----------

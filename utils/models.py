@@ -126,7 +126,7 @@ class TrackNetV2MSE(TrackNetV2Base):
 
 
 class TrackNetV2RNN(TrackNetV2Base):
-    def __init__(self, *args, one_output_frame, **kwargs):
+    def __init__(self, *args, one_output_frame=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.one_output_frame=one_output_frame
 
@@ -136,8 +136,6 @@ class TrackNetV2RNN(TrackNetV2Base):
         else:
             self.vgg_conv1 = self._make_convolution_layer(2 + self.sequence_length, 64, 2, dropout_rate=self.dropout)
 
-        # TODO: implement the true RNN taking the previous output as input, instead of the ground truth
-        # self.previous_state = None
         self.last_conv = nn.Conv2d(64, 1, kernel_size=(1,1), padding='same')
         self.last_sigmoid = nn.Sigmoid()
 
@@ -145,9 +143,8 @@ class TrackNetV2RNN(TrackNetV2Base):
 
     def forward(self, x, deleted_frames=None, use_ground_truth=None):
         if self.internal_state is None:
-            print('internal')
             # initialize previous state
-            self.internal_state = torch.zeros(x.shape[0], self.sequence_length-1, x.shape[2], x.shape[3], device=next(self.parameters()).device)
+            self.internal_state = torch.zeros(x.shape[0], self.sequence_length-1, x.shape[2], x.shape[3], device=next(self.parameters()).device, dtype=x.dtype)
         if use_ground_truth is not None:
             # set input state to previous state according to use_ground_truth
             x[:,:self.sequence_length-1][use_ground_truth==0] = self.internal_state[use_ground_truth==0]
@@ -171,10 +168,9 @@ class TrackNetV2RNN(TrackNetV2Base):
                 x = torch.concat((input[:self.sequence_length-1], x), axis=0)
 
         # shift previous state to the left
-        #self.previous_state[:, :self.sequence_length-2] = self.previous_state[:, 1:self.sequence_length-1]
         self.internal_state = torch.roll(self.internal_state, shifts=-1, dims=1)
         # assign current output to the previous state
-        self.internal_state[:, -1:] = x
+        self.internal_state[:, -1:] = x.detach()
 
         return x
 

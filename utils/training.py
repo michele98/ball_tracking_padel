@@ -18,6 +18,7 @@ def train_one_epoch(net : torch.nn.Module,
                     scheduler : torch.optim.lr_scheduler._LRScheduler = None,
                     device : str = 'cpu',
                     scaler = torch.cuda.amp.GradScaler(),
+                    retain_graph : bool = False,
                     prefix : str = ''):
     """Train the given model for one epoch, over the given dataset
 
@@ -34,6 +35,10 @@ def train_one_epoch(net : torch.nn.Module,
     device : str, optional
     scaler : torch.cuda.amp.GradScaler(), optional
         The scaler for using 16 bits precision
+    retain_graph : bool, optional
+        passed to the backward() call. If False, the graph used to compute the grad will be freed.
+        Note that in nearly all cases setting this option to True is not needed and often can be worked around in a much more efficient way.
+        By default False
     prefix : str, optional
         String to append at the beginning of the output information, by default ''
 
@@ -65,7 +70,7 @@ def train_one_epoch(net : torch.nn.Module,
         # Backpropagation
         #net.zero_grad()
         #error.backward()
-        scaler.scale(error).backward()
+        scaler.scale(error).backward(retain_graph=retain_graph)
 
         # Optimizer step
         #optimizer.step()
@@ -156,8 +161,10 @@ def train_model(net : torch.nn.Module,
                 dataloader_val : torch.utils.data.DataLoader,
                 loss_function : torch.nn.Module,
                 epochs : int,
+                resume_epoch_count_from_checkpoint : bool = True,
                 optimizer : torch.optim.Optimizer = None,
                 scheduler : torch.optim.lr_scheduler._LRScheduler = None,
+                retain_graph : bool = False,
                 device : torch.device = None,
                 checkpoint_folder : str = None,
                 additional_info : dict = {},
@@ -175,12 +182,22 @@ def train_model(net : torch.nn.Module,
     dataloader_val : torch.utils.data.DataLoader
     loss_function : torch.nn.Module
     epochs : int
+        the number of epochs
+    resume_epoch_count_from_checkpoint : bool, optional
+        If set to True, the number of epochs used the last checkpoint are also considered in epoch count:
+        if for instance epochs=10, and the last checkpoint is from epoch 10, no additional training will be done.
+        if set to False, the model will train for the number of epochs specified in `epochs`.
+        By default False
     optimizer : torch.optim.Optimizer, optional
         by default Adam.
     scheduler : torch.optim.lr_scheduler._LRScheduler, optional
         learning rate scheduler, by default None.
         The update of the LR is performed either after each epoch (standard update) or after each batch (only for
         `OneCycleLR` and `CyclicLR`).
+    retain_graph : bool, optional
+        passed to the backward() call. If False, the graph used to compute the grad will be freed.
+        Note that in nearly all cases setting this option to True is not needed and often can be worked around in a much more efficient way.
+        By default False
     device : torch.device, optional
         cpu or cuda, by default cpu.
     checkpoint_folder : str, optional
@@ -250,9 +267,10 @@ def train_model(net : torch.nn.Module,
 
     # -------------------- TRAINING -------------------- #
     # loop for every epoch (training + evaluation)
-    for i, epoch in enumerate(range(starting_epoch, epochs+starting_epoch)):
+    final_epoch = epochs if resume_epoch_count_from_checkpoint else epochs+starting_epoch
+    for i, epoch in enumerate(range(starting_epoch, final_epoch)):
         if verbose: print(" ")
-        print(f'Epoch: {epoch+1}/{epochs+starting_epoch}')
+        print(f'Epoch: {epoch+1}/{final_epoch}')
 
         # Training epoch
         train_loss = train_one_epoch(net=net,
@@ -264,6 +282,7 @@ def train_model(net : torch.nn.Module,
                                       scheduler=None if (scheduler is None or not scheduler_update_each_batch) else scheduler,
                                       device=device,
                                       scaler=scaler,
+                                      retain_graph=retain_graph,
                                       prefix='\tTrain ')
         loss_history.append(train_loss)
 

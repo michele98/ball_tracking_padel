@@ -28,37 +28,37 @@ We have to define:
 The training schedule is divided in 3 phases, each of which has 2 subphases:
 
 Phase 1 (ground truth regime):
- - lr = 1e-3
- - Epochs 1-5:
-   - p(tc) = 0.8
-   - p(c)  = 0.1
-   - p(gt) = 1
- - Epochs 6-10:
-   - p(tc) = 0
-   - p(c)  = 0.5
-   - p(gt) = 0.8
+    - lr = 1e-3
+    - Epochs 1-5:
+        - p(tc) = 0.8
+        - p(c)  = 0.1
+        - p(gt) = 1
+    - Epochs 6-10:
+        - p(tc) = 0
+        - p(c)  = 0.5
+        - p(gt) = 0.8
 
 Phase 2 (hybrid regime):
- - lr = 1e-4
- - Epochs 11-15:
-   - p(tc) = 0
-   - p(c)  = 1/3
-   - p(gt) = 1/2
- - Epochs 15-20:
-   - p(tc) = 0
-   - p(c)  = 1/5
-   - p(gt) = 1/5
+    - lr = 1e-4
+    - Epochs 11-15:
+        - p(tc) = 0
+        - p(c)  = 1/3
+        - p(gt) = 1/2
+    - Epochs 15-20:
+        - p(tc) = 0
+        - p(c)  = 1/5
+        - p(gt) = 1/5
 
 Phase 3 (RNN regime):
- - lr = 1e-5
- - Epochs 21-25:
-   - p(tc) = 0
-   - p(c)  = 1/30
-   - p(gt) = 1/30
- - Epochs 25-30:
-   - p(tc) = 0
-   - p(c)  = 1/200
-   - p(gt) = 0
+    - lr = 1e-5
+    - Epochs 21-25:
+        - p(tc) = 0
+        - p(c)  = 1/30
+        - p(gt) = 1/30
+    - Epochs 25-30:
+        - p(tc) = 0
+        - p(c)  = 1/200
+        - p(gt) = 0
 
 The idea is to make the model recognize the ball in the first phase,
 and then to make it transition to tracking the ball from phase 2 to phase 3.
@@ -75,9 +75,8 @@ class Config():
 
     # training
     _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640'
-    _batch_size = 2
-    _epochs = 20
-    _clear_probability = 0.3
+    _batch_size = 1  # keep it to 1, because for RNN the batch implementation is still wrong
+    _epochs = 5 # these are the epochs per phase, so in total there are 30 epochs
 
     def get_model(self):
         return TrackNetV2RNN(sequence_length=self._sequence_length, one_output_frame=self._one_output_frame, grayscale=self._grayscale)
@@ -103,7 +102,7 @@ def create_datasets():
 
     roots = [f'../datasets/dataset_lluis/game{i+1}' for i in range(5)]
     # roots = [f'../datasets/dataset_lluis/game{i}' for i in [2, 1]]
-    # roots = [f'../datasets/prova_2' for _ in range(2)]
+    # roots = [f'../datasets/prova' for _ in range(2)]
 
     # training dataset
     dataset_train_list = []
@@ -134,30 +133,61 @@ def launch_training(device=None):
 
     dataset_train, dataset_val, dataset_test = create_datasets()
 
-    collate_fn = partial(collate_fn_rnn,
-                         clear_probability=config._clear_probability,
-                         gt_probability=1,
-                         sequence_length=config._sequence_length)
-
-    data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size, collate_fn=collate_fn)
-    data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size, collate_fn=collate_fn)
-
     if not os.path.exists(config._checkpoint_folder): os.makedirs(config._checkpoint_folder)
-
     dataset_train.save_info(os.path.join(config._checkpoint_folder, 'dataset_train_info.json'))
     dataset_val.save_info(os.path.join(config._checkpoint_folder, 'dataset_val_info.json'))
     dataset_test.save_info(os.path.join(config._checkpoint_folder, 'dataset_test_info.json'))
 
-    train_model(config.get_model(),
-                data_loader_train,
-                data_loader_val,
-                loss_function=config.get_loss(),
-                epochs=config._epochs,
-                checkpoint_folder=config._checkpoint_folder,
-                device=device,
-                additional_info={'dataset_train': dataset_train.get_info(),
-                                 'dataset_val': dataset_val.get_info(),
-                                 'dataset_test': dataset_test.get_info()})
+
+    data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size)
+    data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size)
+
+    model = config.get_model()
+
+    training_loop_params = dict(
+    )
+
+    phase_procedures = [
+        {'phase': 'phase_1_0', 'tc': 0.8, 'c': 0.1,   'gt': 1   },
+        {'phase': 'phase_1_1', 'tc': 0,   'c': 0.5,   'gt': 0.8 },
+        {'phase': 'phase_2_0', 'tc': 0,   'c': 1/3,   'gt': 1/2 },
+        {'phase': 'phase_2_1', 'tc': 0,   'c': 1/5,   'gt': 1/5 },
+        {'phase': 'phase_3_0', 'tc': 0,   'c': 1/30,  'gt': 1/30},
+        {'phase': 'phase_3_1', 'tc': 0,   'c': 1/200, 'gt': 0   },
+    ]
+
+    for i, p in enumerate(phase_procedures):
+        checkpoint_folder = os.path.join(config._checkpoint_folder, p['phase'])
+        if not os.path.exists(checkpoint_folder): os.makedirs(checkpoint_folder)
+
+        checkpoint_names = [name for name in os.listdir(checkpoint_folder) if '.ckpt' in name]
+
+        # if there are no checkpoints in this phase folder, load last checkpoint from the previous phase
+        if i>0 and len(checkpoint_names)==0:
+            previous_checkpoints = [name for name in os.listdir(previous_checkpoint_folder) if '.ckpt' in name]
+            model.load(os.path.join(previous_checkpoint_folder, previous_checkpoints[-1]))
+        previous_checkpoint_folder = checkpoint_folder
+
+        collate_fn = partial(collate_fn_rnn,
+                            total_clear_probability=p['tc'],
+                            clear_probability=p['c'],
+                            ground_truth_probability=p['gt'],
+                            sequence_length=config._sequence_length)
+
+        data_loader_train.collate_fn = collate_fn
+        data_loader_val.collate_fn = collate_fn
+        train_model(model,
+                    data_loader_train,
+                    data_loader_val,
+                    retain_graph=False,
+                    loss_function=config.get_loss(),
+                    epochs=config._epochs,
+                    resume_epoch_count_from_checkpoint=True,
+                    checkpoint_folder=checkpoint_folder,
+                    device=device,
+                    additional_info={'dataset_train': dataset_train.get_info(),
+                                     'dataset_val': dataset_val.get_info(),
+                                     'dataset_test': dataset_test.get_info()})
 
 
 if __name__ == '__main__':
