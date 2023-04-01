@@ -11,6 +11,7 @@ from utils.dataset import VideoDatasetRNN, MyConcatDataset
 from utils.models import TrackNetV2RNN
 from utils.training import train_model
 from train_configurations.utils import collate_fn_rnn, BatchSamplerRNN
+from train_configurations.utils import collate_fn_rnn, BatchSamplerRNN
 
 """Training schedule description
 
@@ -74,7 +75,7 @@ class Config():
 
     # training
     _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640'
-    _batch_size = 8
+    _batch_size =8
 
     def get_model(self):
         return TrackNetV2RNN(sequence_length=self._sequence_length, one_output_frame=self._one_output_frame, grayscale=self._grayscale)
