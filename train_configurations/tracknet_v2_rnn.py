@@ -10,10 +10,9 @@ from torchvision.transforms import ToTensor
 from utils.dataset import VideoDatasetRNN, MyConcatDataset
 from utils.models import TrackNetV2RNN
 from utils.training import train_model
-from train_configurations.utils import collate_fn_rnn
+from train_configurations.utils import collate_fn_rnn, BatchSamplerRNN
 
 """Training schedule description
-TODO: implement the RNN part
 
 Definitions:
  - tc: total clearing (set all previous heatmaps to 0)
@@ -75,7 +74,7 @@ class Config():
 
     # training
     _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640'
-    _batch_size = 1  # keep it to 1, because for RNN the batch implementation is still wrong
+    _batch_size = 8
     _epochs = 5 # these are the epochs per phase, so in total there are 30 epochs
 
     def get_model(self):
@@ -138,14 +137,10 @@ def launch_training(device=None):
     dataset_val.save_info(os.path.join(config._checkpoint_folder, 'dataset_val_info.json'))
     dataset_test.save_info(os.path.join(config._checkpoint_folder, 'dataset_test_info.json'))
 
-
-    data_loader_train = DataLoader(dataset_train, batch_size=config._batch_size)
-    data_loader_val = DataLoader(dataset_val, batch_size=config._batch_size)
+    data_loader_train = DataLoader(dataset_train, batch_sampler=BatchSamplerRNN(dataset_train, config._batch_size))
+    data_loader_val = DataLoader(dataset_val, batch_sampler=BatchSamplerRNN(dataset_val, config._batch_size))
 
     model = config.get_model()
-
-    training_loop_params = dict(
-    )
 
     phase_procedures = [
         {'phase': 'phase_1_0', 'tc': 0.8, 'c': 0.1,   'gt': 1   },

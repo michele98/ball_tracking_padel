@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data._utils.collate import default_collate
 from torch.distributions.bernoulli import Bernoulli
-
+from torch.utils.data import Sampler
 
 def collate_fn_rnn(batch,
                    total_clear_probability: float,
@@ -48,6 +48,30 @@ def collate_fn_rnn(batch,
 
     use_gt = Bernoulli(ground_truth_probability*torch.ones(len(batch), sequence_length-1)).sample()
     return x, deleted_frames, use_gt, labels
+
+
+class BatchSamplerRNN(Sampler):
+    def __init__(self, data_source, batch_size, drop_last=False) -> None:
+        self.data_source = data_source
+        self.batch_size = batch_size
+        if drop_last:
+            self.num_batches = len(data_source) // batch_size
+        else:
+            self.num_batches = (len(data_source) + batch_size - 1) // batch_size
+
+    def __iter__(self):
+        i = 0
+        for batch_idx in range(self.num_batches):
+            batch = []
+            for element_idx in range(self.batch_size):
+                i+=1
+                if i > len(self.data_source):
+                    break
+                batch.append(batch_idx + element_idx*self.num_batches)
+            yield batch
+
+    def __len__(self):
+        return self.num_batches
 
 
 class ConfigBase():
