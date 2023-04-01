@@ -176,7 +176,7 @@ def launch_training(device=None):
                     data_loader_val,
                     retain_graph=False,
                     loss_function=config.get_loss(),
-                    epochs=config._epochs,
+                    epochs=p['epochs'],
                     resume_epoch_count_from_checkpoint=True,
                     checkpoint_folder=checkpoint_folder,
                     device=device,
