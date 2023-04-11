@@ -231,7 +231,7 @@ def train_model(net : torch.nn.Module,
     if optimizer is None:
         optimizer = optim.Adam(net.parameters())
     else:
-        optimizer = optimizer(params=net.parameters())
+        optimizer = optimizer
 
     if scheduler is not None:
         scheduler = scheduler(optimizer=optimizer)
