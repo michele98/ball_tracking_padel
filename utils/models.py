@@ -143,11 +143,16 @@ class TrackNetV2RNN(TrackNetV2Base):
 
     def forward(self, x, deleted_frames=None, use_ground_truth=None):
         if self.internal_state is None:
-            # initialize previous state
+            # initialize internal state to zero
             self.internal_state = torch.zeros(x.shape[0], self.sequence_length-1, x.shape[2], x.shape[3], device=next(self.parameters()).device, dtype=x.dtype)
-        if use_ground_truth is not None:
-            # set input state to previous state according to use_ground_truth
+
+        if use_ground_truth is None:
+            # set input to internal state
+            x[:,:self.sequence_length-1] = self.internal_state
+        else:
+            # set input state to internal state according to use_ground_truth
             x[:,:self.sequence_length-1][use_ground_truth==0] = self.internal_state[use_ground_truth==0]
+
         if deleted_frames is not None:
             # set frames to delete to 0
             for i in range(x.shape[0]):

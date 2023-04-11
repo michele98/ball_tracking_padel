@@ -10,12 +10,41 @@ import torch
 import torch.utils.data
 from torch.utils.data import DataLoader
 
+from train_configurations.utils import get_standard_test_dataset, get_debug_dataset
+
 from typing import Union
 
 
 def get_maximum_coordinates(heatmaps):
     y, x = np.nonzero(heatmaps == np.max(heatmaps))
     return x[0], y[0]
+
+
+def _get_checkpoint_filename(checkpoint_folder):
+        checkpoint_filenames = [name for name in os.listdir(checkpoint_folder) if name[-5:]=='.ckpt']
+        if len(checkpoint_filenames)==0:
+            raise FileNotFoundError(f"No checkpoint found in {checkpoint_folder}")
+
+        for name in checkpoint_filenames:
+            if '_best' in name:
+                checkpoint_filename = name
+                break
+            checkpoint_filename = name
+
+        return checkpoint_filename
+
+
+def _get_results_folder(checkpoint_folder: str, checkpoint_filename: str):
+    if not os.path.exists(checkpoint_folder):
+        raise FileNotFoundError(f"Checkpoint folder not found: {checkpoint_folder}")
+
+    if checkpoint_filename is None:
+        checkpoint_filename = _get_checkpoint_filename(checkpoint_folder)
+
+    # create output folder inside the checkpoint folder
+    results_folder = '_'.join(checkpoint_filename.split('.')[0].split('_')[:2])
+    results_folder += '_results'
+    return os.path.join(checkpoint_folder, results_folder)
 
 
 def compute_positions(net : torch.nn.Module,
@@ -141,94 +170,106 @@ def compute_positions_noh(net : torch.nn.Module,
 
 
 def create_output_csv(training_configuration,
+                      is_rnn: bool = False,
+                      training_phase: str = None,
                       checkpoint_filename: str = None,
                       backup_checkpoint: bool = True,
-                      device='cpu',
+                      device=None,
                       split: str ='test'):
     """Create the output csv on the test set for the given training configuration
 
     Parameters
     ----------
     training_configuration : module
-        one of the modules in `train_configurations`
+        one of the modules in `train_configurations`.
+    is_rnn : bool, optional
+        set to True if the model is an RNN. The batch size will be set to 1. By default False.
+    training_phase : str, optional
+        name of the training phase if the checkpoint folder contains subfolders with multiple phases.
+        Will raise an error if not provided when training phases are present.
     checkpoint_filename : str, optional
         name of the checkpoint file in the checkpoint folder specified by the training configuration.
         If not provided, the the best checkpoint is used.
     backup_checkpoint : bool, optional
-        if True, copy the checkpoint in the output folder. By default True
+        if True, copy the checkpoint in the output folder. By default True.
     device : torch.device or str, optional
-        by default 'cpu'
+        if not provided, `'cuda'` if available, else `'cpu'`.
     split : str, optional
-        `'train'`, `'val'` or `'test'`. By default `'test'`
+        `'train'`, `'val'`, `'test'` or `'test_standard'`. By default `'test'`.
 
     Raises
     ------
     FileNotFoundError
         If the checkpoint folder specified in `training_configuration` is has no checkpoints of if it does not exist
     ValueError
-        If `split` is something other than `'train'`, `'val'` or `'test'`
+        If `split` is something other than `'train'`, `'val'` or `'test'`.
     """
     config = training_configuration.Config()   # get training configuration
 
-    if not os.path.exists(config._checkpoint_folder):
-        raise FileNotFoundError(f"Checkpoint folder not found: {config._checkpoint_folder}")
-
-    checkpoint_filenames = [name for name in os.listdir(config._checkpoint_folder) if name[-5:]=='.ckpt']
-
-    if len(checkpoint_filenames)==0:
-        raise FileNotFoundError(f"No checkpoint found in {config._checkpoint_folder}")
+    checkpoint_folder = config._checkpoint_folder
+    if training_phase is not None:
+        checkpoint_folder = os.path.join(checkpoint_folder, training_phase)
 
     if checkpoint_filename is None:
-        for name in checkpoint_filenames:
-            if '_best' in name:
-                checkpoint_filename = name
-                break
-            checkpoint_filename = name
+        checkpoint_filename = _get_checkpoint_filename(checkpoint_folder)
 
-    # create output folder inside the checkpoint folder
-    results_folder = '_'.join(checkpoint_filename.split('.')[0].split('_')[:2])
-    results_folder += '_results'
-    results_folder = os.path.join(config._checkpoint_folder, results_folder)
-
+    results_folder = _get_results_folder(checkpoint_folder, checkpoint_filename)
     if not os.path.exists(results_folder): os.makedirs(results_folder)
+
     print(f"Saving results in {results_folder}")
 
     if backup_checkpoint:
         print(f"Copying checkpoint {checkpoint_filename}")
-        print(f"From {config._checkpoint_folder} to {results_folder}")
-        shutil.copy2(os.path.join(config._checkpoint_folder, checkpoint_filename), results_folder)
+        print(f"From {checkpoint_folder} to {results_folder}")
+        shutil.copy2(os.path.join(checkpoint_folder, checkpoint_filename), results_folder)
+
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = config.get_model()
     model.to(device)
-    model.load(os.path.join(config._checkpoint_folder, checkpoint_filename), device=device)
+    model.load(os.path.join(checkpoint_folder, checkpoint_filename), device=device)
     model.eval()
 
-    dataset_train, dataset_val, dataset_test = training_configuration.create_datasets()
-    if split.lower() == 'train':
-        dataset = dataset_train
-    elif split.lower() == 'val':
-        dataset = dataset_val
-    elif split.lower() == 'test':
-        dataset = dataset_test
+    if split.lower() in ['train', 'val', 'test']:
+        dataset_train, dataset_val, dataset_test = training_configuration.create_datasets()
+        if split.lower() == 'train':
+            dataset = dataset_train
+        elif split.lower() == 'val':
+            dataset = dataset_val
+        elif split.lower() == 'test':
+            dataset = dataset_test
+        else:
+            raise ValueError("The split must be either 'train', 'val', 'test' or 'test_standard'")
+    elif split.lower() == "debug":
+        dataset = get_debug_dataset(training_configuration, is_rnn=is_rnn)
     else:
-        raise ValueError("The split must be either 'train', 'val', or 'test'")
+        dataset = get_standard_test_dataset(training_configuration, name=split.lower(), is_rnn=is_rnn)
 
-    data_loader = DataLoader(dataset, batch_size=config._batch_size)
+    batch_size = 1 if is_rnn else config._batch_size
+    data_loader = DataLoader(dataset, batch_size=batch_size)
 
-    frames = [frame_num for dataset in dataset.datasets for frame_num in dataset._label_df['num'].values]
-    dataset_ids = [i for i, dataset in enumerate(dataset.datasets) for j in range(len(dataset))]
-
+    if hasattr(dataset, "datasets"):
+        # depending if dataset is a concatenation of datasets or not
+        frames = [frame_num for dataset in dataset.datasets for frame_num in dataset._label_df['num'].values]
+        dataset_ids = [i for i, dataset in enumerate(dataset.datasets) for _ in range(len(dataset))]
+        dataset_info = dataset.get_info()[0]
+    else:
+        frames = [frame_num for frame_num in dataset._label_df['num'].values]
+        dataset_ids = [0 for _ in range(len(dataset))]
+        dataset_info = dataset.get_info()
+    print(dataset_info)
     output_dict = {'dataset_id': dataset_ids, 'frame_num': frames}
 
     print("\nComputing results:")
-    if dataset.get_info()[0]['output_heatmap']:
+    if dataset_info['output_heatmap']:
         true_positions, predicted_positions, min_values, max_values = compute_positions(
             model,
             data_loader,
             device=device,
             heatmaps_folder=os.path.join(results_folder, f"heatmaps_{split.lower()}"))
 
-        image_size = dataset.get_info()[0]['image_size']
+        image_size = dataset_info['image_size']
         output_dict['min_values'] = min_values
         output_dict['max_values'] = max_values
         output_dict['x_true'] = true_positions[:,0]/image_size[1]
@@ -444,6 +485,7 @@ def create_video(filename_src : str,
 
 
 def save_labeled_video(training_configuration,
+                       training_phase: str = None,
                        checkpoint_filename: str = None,
                        split: str ='test',
                        dataset_id: Union[int, list] = None,
@@ -455,6 +497,9 @@ def save_labeled_video(training_configuration,
     ----------
     training_configuration : module
         one of the modules in `train_configurations`
+    training_phase : str, optional
+        name of the training phase if the checkpoint folder contains subfolders with multiple phases.
+        Will raise an error if not provided when training phases are present.
     checkpoint_filename : str, optional
         name of the checkpoint file in the checkpoint folder specified by the training configuration.
         If not provided, the the best checkpoint is used.
@@ -476,45 +521,32 @@ def save_labeled_video(training_configuration,
     """
     config = training_configuration.Config()   # get training configuration
 
-    if not os.path.exists(config._checkpoint_folder):
-        raise FileNotFoundError(f"Checkpoint folder not found: {config._checkpoint_folder}")
+    checkpoint_folder = config._checkpoint_folder
+    if training_phase is not None:
+        checkpoint_folder = os.path.join(checkpoint_folder, training_phase)
 
-    checkpoint_filenames = [name for name in os.listdir(config._checkpoint_folder) if name[-5:]=='.ckpt']
-
-    if len(checkpoint_filenames)==0:
-        raise FileNotFoundError(f"No checkpoint found in {config._checkpoint_folder}")
-
-    if checkpoint_filename is None:
-        for name in checkpoint_filenames:
-            if '_best' in name:
-                checkpoint_filename = name
-                break
-            checkpoint_filename = name
-
-    # create output folder inside the checkpoint folder
-    results_folder = '_'.join(checkpoint_filename.split('.')[0].split('_')[:2])
-    results_folder += '_results'
-    results_folder = os.path.join(config._checkpoint_folder, results_folder)
-
+    results_folder = _get_results_folder(checkpoint_folder, checkpoint_filename)
     if not os.path.exists(results_folder):
         raise FileNotFoundError("The results for the specified checkpoint do not exist. Run `create_output_csv` first.")
 
     position_df_filename = os.path.join(results_folder, f'output_{split.lower()}.csv')
     position_df = pd.read_csv(position_df_filename)
 
-    if split.lower() != 'train' and split.lower() != 'val' and split.lower() != 'test':
-        raise ValueError("The split must be either 'train', 'val', or 'test'")
-
     heatmaps_folder = os.path.join(results_folder, f'heatmaps_{split.lower()}')
     heatmaps_folder = heatmaps_folder if os.path.exists(heatmaps_folder) else None
 
-    with open(os.path.join(config._checkpoint_folder, f"dataset_{split.lower()}_info.json"), 'r') as f:
-        dataset_info = json.load(f)
+    if split.lower() in ['train', 'val', 'test']:
+        with open(os.path.join(config._checkpoint_folder, f"dataset_{split.lower()}_info.json"), 'r') as f:
+            dataset_info = json.load(f)
 
-    if dataset_id is None:
-        dataset_id = [i for i in range(len(dataset_info))]
-    elif type(dataset_id) is int:
-        dataset_id = [dataset_id]
+        if dataset_id is None:
+            dataset_id = [i for i in range(len(dataset_info))]
+        elif type(dataset_id) is int:
+            dataset_id = [dataset_id]
+    else:
+        dataset_info = [{'root': f'../datasets/{split.lower()}'}]
+        dataset_id = [0]
+        show_ground_truth = False
 
     print(f"Using data from {position_df_filename}\n")
     for i in dataset_id:

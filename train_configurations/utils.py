@@ -1,7 +1,10 @@
+from utils.dataset import VideoDataset, VideoDatasetRNN, MyConcatDataset
+
 import torch
 from torch.utils.data._utils.collate import default_collate
 from torch.distributions.bernoulli import Bernoulli
 from torch.utils.data import Sampler
+from torchvision.transforms import ToTensor
 
 def collate_fn_rnn(batch,
                    total_clear_probability: float,
@@ -79,3 +82,34 @@ class ConfigBase():
     _checkpoint_folder = None
     def get_model(self):
         raise NotImplementedError
+
+
+def _get_standard_dataset(root, train_configuration, is_rnn):
+    config = train_configuration.Config()
+
+    if hasattr(config, '_grayscale'):
+        grayscale = config._grayscale
+    else:
+        grayscale = False
+
+    dataset_params = dict(root=root,
+                          image_size=config._image_size,
+                          sigma=5,
+                          sequence_length=config._sequence_length,
+                          one_output_frame=config._one_output_frame,
+                          drop_duplicate_frames=False,
+                          transform=ToTensor(),
+                          target_transform=ToTensor(),
+                          grayscale=grayscale)
+
+    if is_rnn:
+        return VideoDatasetRNN(**dataset_params)
+    return VideoDataset(**dataset_params)
+
+
+def get_standard_test_dataset(train_configuration, name='test_standard', is_rnn = False):
+    return _get_standard_dataset(f'../datasets/{name}', train_configuration, is_rnn)
+
+
+def get_debug_dataset(train_configuration, is_rnn = False):
+    return _get_standard_dataset('../datasets/debug', train_configuration, is_rnn)

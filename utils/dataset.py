@@ -23,7 +23,7 @@ class VideoDataset(Dataset):
                  overlap_sequences: bool = True,
                  image_size: Tuple[int, int] = None,
                  sigma: float = 5,
-                 heatmap_mode = 'normalized',
+                 heatmap_mode = 'image',
                  drop_duplicate_frames: bool = True,
                  duplicate_equality_threshold: float = 0.97,
                  one_output_frame: bool = True,
@@ -48,7 +48,7 @@ class VideoDataset(Dataset):
                  - `num` (int): frame number;
                  - `x` (float): normalized horizontal coordinate from the left border;
                  - `y` (float): normalized vertical coordinate from the upper border;
-                 - `visibility` (int): 0 (occluded), 1 (visible), 2 (motion blurred), 3 (unknown).
+                 - `visibile` (int): 0 (occluded), 1 (visible), 2 (motion blurred), 3 (unknown).
 
         split : str, optional
             `'train'`, `'val'` or `'test'`.
@@ -79,7 +79,7 @@ class VideoDataset(Dataset):
              - `'normalized'`: the heatmap is a Gaussian normal distribution, i.e. the integral over the whole heatmap is 1;
              - `'image'`: the maximum value is set to 255, and the data type is uint8.
 
-            By default `'normalized'`
+            By default `'image'`
         drop_duplicate_frames : bool, optional
             Choose wheter to drop duplicate frames from the frame sequence.
             Attention, when sampling, duplicate frames are treated as separate frames.
@@ -96,16 +96,13 @@ class VideoDataset(Dataset):
         preload_in_memory : bool, optional
             preload the frames to RAM. It improves loading times in training, but could lead to high memory usage. By default True
         """
+        if not os.path.exists(root):
+            raise FileNotFoundError(f"The folder {root} does not exist")
         self.root = root
         self.output_heatmap = output_heatmap
         self.transform = transform
         self.target_transform = target_transform
         self.concatenate_sequence = concatenate_sequence
-        self.split = split
-        if split is None:
-            self._label_df = pd.read_csv(os.path.join(root, f"labels.csv"))
-        else:
-            self._label_df = pd.read_csv(os.path.join(root, f"labels_{split}.csv"))
         self.sequence_length = sequence_length
         self.overlap_sequences = overlap_sequences
         self._cap = cv2.VideoCapture(os.path.join(root, "video.mp4"))
@@ -115,6 +112,14 @@ class VideoDataset(Dataset):
             self.image_size = frame.shape[:2]
         else:
             self.image_size = image_size
+        self.split = split
+        labels_filename = os.path.join(root, "labels.csv" if split is None else f"labels_{split}.csv")
+        self._labeled = os.path.exists(labels_filename)
+        if self._labeled:
+            self._label_df = pd.read_csv(labels_filename)
+        else:
+            print(f"Unlabeled data in {root}. Target label will be empty heatmap or (None, None)")
+            self._label_df = self._generate_default_df()
         self.sigma = sigma
         if heatmap_mode.lower() != 'normalized' and heatmap_mode.lower() != 'image':
             raise ValueError("heatmap_mode must either be 'normalized' or 'image'")
@@ -137,6 +142,13 @@ class VideoDataset(Dataset):
             if self._preload_in_memory:
                 self._preload()
             self._cap.release()
+
+    def _generate_default_df(self):
+        frame_count = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        return pd.DataFrame({'num':     [ i for i in range(self.sequence_length, frame_count-self.sequence_length)],
+                             'x':       [-1 for _ in range(self.sequence_length, frame_count-self.sequence_length)],
+                             'y':       [-1 for _ in range(self.sequence_length, frame_count-self.sequence_length)],
+                             'visible': [ 3 for _ in range(self.sequence_length, frame_count-self.sequence_length)]})
 
     def _get_frames_to_preload(self):
         frame_numbers = sorted(self._label_df['num'].values)
@@ -175,7 +187,7 @@ class VideoDataset(Dataset):
 
     def _get_coordinates(self, frame_number):
             normalized_coordinates = self._get_normalized_coordinates(frame_number)
-            if normalized_coordinates is not None:
+            if normalized_coordinates is not None and normalized_coordinates[0] >= 0:
                 return [normalized_coordinates[i]*self.image_size[i] for i in range(2)]
             else:
                 return None, None
