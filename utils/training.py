@@ -187,7 +187,7 @@ def train_model(net : torch.nn.Module,
         If set to True, the number of epochs used the last checkpoint are also considered in epoch count:
         if for instance epochs=10, and the last checkpoint is from epoch 10, no additional training will be done.
         if set to False, the model will train for the number of epochs specified in `epochs`.
-        By default False
+        By default True
     optimizer : torch.optim.Optimizer, optional
         by default Adam.
     scheduler : torch.optim.lr_scheduler._LRScheduler, optional
