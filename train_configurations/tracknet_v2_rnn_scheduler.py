@@ -76,7 +76,7 @@ class Config():
 
     # training
     _checkpoint_folder = './checkpoints/tracknet_v2_rnn_360_640_scheduler'
-    _batch_size = 2
+    _batch_size = 8
 
     def get_model(self):
         return TrackNetV2RNN(sequence_length=self._sequence_length, one_output_frame=self._one_output_frame, grayscale=self._grayscale)
