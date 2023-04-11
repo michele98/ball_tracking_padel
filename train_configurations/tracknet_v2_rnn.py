@@ -137,8 +137,8 @@ def launch_training(device=None):
     dataset_val.save_info(os.path.join(config._checkpoint_folder, 'dataset_val_info.json'))
     dataset_test.save_info(os.path.join(config._checkpoint_folder, 'dataset_test_info.json'))
 
-    data_loader_train = DataLoader(dataset_train, batch_sampler=BatchSamplerRNN(dataset_train, config._batch_size))
-    data_loader_val = DataLoader(dataset_val, batch_sampler=BatchSamplerRNN(dataset_val, config._batch_size))
+    data_loader_train = DataLoader(dataset_train, batch_sampler=BatchSamplerRNN(dataset_train, config._batch_size, drop_last=True))
+    data_loader_val = DataLoader(dataset_val, batch_sampler=BatchSamplerRNN(dataset_val, config._batch_size, drop_last=True))
 
     model = config.get_model()
 
