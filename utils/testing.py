@@ -175,7 +175,7 @@ def create_output_csv(training_configuration,
                       checkpoint_filename: str = None,
                       backup_checkpoint: bool = True,
                       device=None,
-                      split: str ='test'):
+                      split: str ='val'):
     """Create the output csv on the test set for the given training configuration
 
     Parameters
@@ -258,7 +258,7 @@ def create_output_csv(training_configuration,
         frames = [frame_num for frame_num in dataset._label_df['num'].values]
         dataset_ids = [0 for _ in range(len(dataset))]
         dataset_info = dataset.get_info()
-    print(dataset_info)
+
     output_dict = {'dataset_id': dataset_ids, 'frame_num': frames}
 
     print("\nComputing results:")
@@ -487,7 +487,7 @@ def create_video(filename_src : str,
 def save_labeled_video(training_configuration,
                        training_phase: str = None,
                        checkpoint_filename: str = None,
-                       split: str ='test',
+                       split: str ='val',
                        dataset_id: Union[int, list] = None,
                        show_ground_truth: bool = True):
     """Save the video with the annotated ball position (as a red dot). If `show_ground_truth` is True,
@@ -504,7 +504,7 @@ def save_labeled_video(training_configuration,
         name of the checkpoint file in the checkpoint folder specified by the training configuration.
         If not provided, the the best checkpoint is used.
     split : str, optional
-        `'train'`, `'val'` or `'test'`. By default `'test'`
+        `'train'`, `'val'` or `'test'`. By default `'val'`
     dataset_id : int or list of int, optional
         Id of the dataset used in the selected split. By default 0
     show_ground_truth : bool, optional
