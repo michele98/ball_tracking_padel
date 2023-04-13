@@ -9,7 +9,7 @@ from torchvision.transforms import ToTensor
 def collate_fn_rnn(batch,
                    total_clear_probability: float,
                    clear_probability: float,
-                   ground_truth_probability: list[float],
+                   ground_truth_probability: list,
                    sequence_length: int):
     """Base collate function to pass to a DataLoader for TrackNetV2RNN.
     When passing to a DataLoader, fix all the parameters other than `batch`
