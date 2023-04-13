@@ -15,9 +15,71 @@ from train_configurations.utils import get_standard_test_dataset, get_debug_data
 from typing import Union
 
 
-def get_maximum_coordinates(heatmaps):
+def get_global_maximum(heatmaps):
     y, x = np.nonzero(heatmaps == np.max(heatmaps))
     return x[0], y[0]
+
+
+def get_local_maxima(array, include_diagonal: bool = True, threshold: float = 0, sigma: float = 0):
+    """Find local maxima in a 2D array by comparing pixels in the immediate neighborhood
+
+    Parameters
+    ----------
+    array : 2D np.ndarray
+    include_diagonal : bool, optional
+        if True, pixels in the diagonal are included in the immediate neighborhood. By default True
+    threshold : int, optional
+        only maxima above this value will be considered. By default 0
+    sigma : int, optional
+        if provided, applies gaussian blurring to the image before computing the maxima
+
+    Returns
+    -------
+    ndarray
+        postions of the local maxima. The shape is `(n_maxima, 2)`
+    """
+    padded_array = array.copy()
+
+    # smooth image for removing neighboring maxima
+    if sigma>0:
+        # save value range for later rescaling back
+        max_value = padded_array.max()
+        min_value = padded_array.min()
+
+        # apply gaussian blur
+        ks = int(4*2*np.ceil(sigma)+1)
+        padded_array = cv2.GaussianBlur(padded_array, (ks, ks), sigma)
+
+        # rescale blurred array to have the same range as before
+        denominator = padded_array.max() - padded_array.min()
+        denominator = 1 if denominator==0 else denominator
+        a = (max_value - min_value) / denominator
+        b = max_value - a*padded_array.max()
+        padded_array = a*padded_array + b
+
+    # Pad array so we can handle edges
+    padded_array = np.pad(padded_array, ((1,1),(1,1)), constant_values=threshold)
+
+    # Determine if each location is bigger than adjacent neighbors
+    adjacentmax = (
+    (padded_array[1:-1,1:-1] > threshold) &
+    (padded_array[0:-2,1:-1] <= padded_array[1:-1,1:-1]) &
+    (padded_array[2:,  1:-1] <= padded_array[1:-1,1:-1]) &
+    (padded_array[1:-1,0:-2] <= padded_array[1:-1,1:-1]) &
+    (padded_array[1:-1,2:  ] <= padded_array[1:-1,1:-1])
+    )
+    if not include_diagonal :
+        return np.argwhere(adjacentmax)
+
+    # Determine if each location is bigger than diagonal neighbors
+    diagonalmax = (
+    (padded_array[0:-2,0:-2] <= padded_array[1:-1,1:-1]) &
+    (padded_array[2:  ,2:  ] <= padded_array[1:-1,1:-1]) &
+    (padded_array[0:-2,2:  ] <= padded_array[1:-1,1:-1]) &
+    (padded_array[2:  ,0:-2] <= padded_array[1:-1,1:-1])
+    )
+
+    return np.argwhere(adjacentmax & diagonalmax)
 
 
 def _get_checkpoint_filename(checkpoint_folder):
@@ -98,8 +160,8 @@ def compute_positions(net : torch.nn.Module,
                 outputs = net(inputs).to('cpu').numpy()
 
             for i, (label, output) in enumerate(zip(labels, outputs)):
-                true_positions.append(get_maximum_coordinates(label[-1]))
-                predicted_positions.append(get_maximum_coordinates(output[-1]))
+                true_positions.append(get_global_maximum(label[-1]))
+                predicted_positions.append(get_global_maximum(output[-1]))
                 min_heatmap_values.append(output[0].min())
                 max_heatmap_values.append(output[0].max())
 
@@ -347,19 +409,23 @@ def frame_generator(filename, start_frame=None, stop_frame=None, verbose=True):
     cap.release()
 
 
-def annotate_frame(frame, predicted_position, true_position=None, max_heatmap_value=None):
+def annotate_frame(frame, predicted_positions, true_position=None, max_heatmap_value=None):
     """Put dots on the predicted (red) and true (green) ball positions.
 
     Parameters
     ----------
     frame : array
         frame to annotate
-    predicted_position : tuple of float
+    predicted_positions : tuple of float
         predicted ball position in pixel coordinates. The coordinate order is `(x, y)`
+        can be a list of tuples for multiple detections
     true_position : tuple of float, optional
         true ball position in pixel coordinates. The coordinate order is `(x, y)`
-    max_heatmap_value : float, optional
-        the maximum value of the heatmap. Will be annotated in the upper right corner
+    max_heatmap_value : float or list of float, optional
+        the value of the heatmap maximum.
+        Can be a list for each detected position.
+        If a single value is provided, will be annotated in the upper right corner.
+        If a list is provided, will be annotated above each detection.
 
     Returns
     -------
@@ -375,21 +441,34 @@ def annotate_frame(frame, predicted_position, true_position=None, max_heatmap_va
                                      color=(0, 255, 0),
                                      thickness=cv2.FILLED)
 
-    annotated_frame = cv2.circle(annotated_frame,
-                                 center=predicted_position,
-                                 radius=5,
-                                 color=(255, 0, 0),
-                                 thickness=cv2.FILLED)
+    if len(np.shape(predicted_positions)) == 1:
+        predicted_positions = (predicted_positions, )
+
+    for predicted_position in predicted_positions:
+        annotated_frame = cv2.circle(annotated_frame,
+                                     center=predicted_position,
+                                     radius=5,
+                                     color=(255, 0, 0),
+                                     thickness=cv2.FILLED)
 
     annotated_frame = cv2.addWeighted(annotated_frame, 0.6, frame, 0.4, 0)
 
     if max_heatmap_value is not None:
-        annotated_frame = cv2.putText(annotated_frame,
-                                      text=f"{max_heatmap_value:.2g}",
-                                      org=(int(0.85*frame.shape[1]), int(0.15*frame.shape[0])),
-                                      fontFace=cv2.FONT_HERSHEY_DUPLEX,
-                                      fontScale=1,
-                                      color=(255, 255, 255))
+        if not hasattr(max_heatmap_value, '__iter__'):
+            annotated_frame = cv2.putText(annotated_frame,
+                                          text=f"{max_heatmap_value:.2g}",
+                                          org=(int(0.85*frame.shape[1]), int(0.15*frame.shape[0])),
+                                          fontFace=cv2.FONT_HERSHEY_DUPLEX,
+                                          fontScale=1,
+                                          color=(255, 255, 255))
+        else:
+            for pos, value in zip(predicted_positions, max_heatmap_value):
+                annotated_frame = cv2.putText(annotated_frame,
+                                              text=f"{value:.2g}",
+                                              org=(pos[0], pos[1] + 20),
+                                              fontFace=cv2.FONT_HERSHEY_DUPLEX,
+                                              fontScale=0.6,
+                                              color=(255, 255, 255))
 
     return annotated_frame
 
@@ -399,6 +478,8 @@ def create_video(filename_src : str,
                  position_df : pd.DataFrame,
                  show_ground_truth : bool = False,
                  heatmaps_folder : str = None,
+                 detection_threshold : float = None,
+                 local_maxima_smoothing : float = None,
                  start_frame : int = None,
                  stop_frame : int = None,
                  fps : int = None):
@@ -421,7 +502,14 @@ def create_video(filename_src : str,
     show_ground_truth : bool, optional
         by default False
     heatmaps_folder : string, optional
-        if provided
+        if provided, heatmaps will be taken from here
+    detection_threshold : float, optional
+        if provided, annotates the local maxima of the heatmap abore this threshold.
+        Otherwise, the global maximum of the heatmap will be used (which is in output.csv).
+        Only used if heatmaps_folder is True
+    local_maxima_smoothing : float, optional
+        if provided, applies gaussian smoothing to the heatmap before computing the local maxima.
+        Only used if detection_threshold is provided
     start_frame : int, optional
         if provided, starts the rendering after this many frames.
         By default the first annotated frame in `position_df`.
@@ -456,27 +544,44 @@ def create_video(filename_src : str,
 
     for i, frame in enumerate(frame_gen):
         frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1].index
-        if len(frame_index) == 1:
-            x_pred = int(position_df['x_pred'][frame_index]*frame.shape[1])
-            y_pred = int(position_df['y_pred'][frame_index]*frame.shape[0])
-            predicted_position = (x_pred, y_pred)
+        if len(frame_index) != 1:
+            continue
 
-            if show_ground_truth:
-                x_true = int(position_df['x_true'][frame_index]*frame.shape[1])
-                y_true = int(position_df['y_true'][frame_index]*frame.shape[0])
-                true_position = (x_true, y_true)
-            else:
-                true_position = None
+        # naive ball position taken from output csv
+        x_pred = int(position_df['x_pred'][frame_index]*frame.shape[1])
+        y_pred = int(position_df['y_pred'][frame_index]*frame.shape[0])
+        predicted_positions = (x_pred, y_pred)
 
-            max_heatmap_value = None
-            # add heatmap visualization
-            if heatmaps_folder is not None:
-                max_heatmap_value = position_df['max_values'][frame_index].values[0]
-                heatmap = cv2.imread(os.path.join(heatmaps_folder, f"{frame_index.values[0]}".zfill(6)+'.png'))
-                heatmap = cv2.resize(heatmap, (w, h))
-                frame = cv2.addWeighted(frame, 0.5, heatmap, 0.5, 0)
+        if show_ground_truth:
+            x_true = int(position_df['x_true'][frame_index]*frame.shape[1])
+            y_true = int(position_df['y_true'][frame_index]*frame.shape[0])
+            true_position = (x_true, y_true)
+        else:
+            true_position = None
 
-            frame = annotate_frame(frame, predicted_position, true_position, max_heatmap_value)
+        max_heatmap_value = None
+        # add heatmap visualization
+        if heatmaps_folder is not None:
+            max_heatmap_value = position_df['max_values'][frame_index].values[0]
+            min_heatmap_value = position_df['min_values'][frame_index].values[0]
+            heatmap = cv2.imread(os.path.join(heatmaps_folder, f"{frame_index.values[0]}".zfill(6)+'.png'))
+
+            if detection_threshold is not None:
+                step = 2 # sample the heatmap every 2 steps to improve performance
+                normalized_heatmap = heatmap[::step, ::step, 0]/255
+
+                true_heatmap = (normalized_heatmap-min_heatmap_value) * (max_heatmap_value-min_heatmap_value)
+                predicted_positions = get_local_maxima(true_heatmap.T, threshold=detection_threshold, sigma=local_maxima_smoothing/step)
+
+                max_heatmap_value = [true_heatmap[pos[1], pos[0]] for pos in predicted_positions]
+
+                predicted_positions[:,0] = step * predicted_positions[:,0] * h/heatmap.shape[0]
+                predicted_positions[:,1] = step * predicted_positions[:,1] * w/heatmap.shape[1]
+
+            heatmap = cv2.resize(heatmap, (w, h))
+            frame = cv2.addWeighted(frame, 0.5, heatmap, 0.5, 0)
+
+        frame = annotate_frame(frame, predicted_positions, true_position, max_heatmap_value)
 
         out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
@@ -489,7 +594,9 @@ def save_labeled_video(training_configuration,
                        checkpoint_filename: str = None,
                        split: str ='val',
                        dataset_id: Union[int, list] = None,
-                       show_ground_truth: bool = True):
+                       show_ground_truth: bool = True,
+                       detection_threshold: float = 0.1,
+                       local_maxima_smoothing : float = 5):
     """Save the video with the annotated ball position (as a red dot). If `show_ground_truth` is True,
     the ground truth is shown as a green dot.
 
@@ -509,6 +616,13 @@ def save_labeled_video(training_configuration,
         Id of the dataset used in the selected split. By default 0
     show_ground_truth : bool, optional
         Show ground truth on the video. By default True
+    detection_threshold : float, optional
+        if provided, annotates the local maxima of the heatmap above this threshold.
+        Otherwise the position in output.csv is used.
+        Used only if the network outputs heatmaps. By default 0.1
+    local_maxima_smoothing : float, optional
+        if provided, applies gaussian smoothing to the heatmap before computing the local maxima.
+        Only used if detection_threshold is provided. By default 5
 
     Raises
     ------
@@ -561,5 +675,7 @@ def save_labeled_video(training_configuration,
                      filename_dst=dst,
                      position_df=position_df.loc[position_df['dataset_id']==i],
                      show_ground_truth=show_ground_truth,
-                     heatmaps_folder=heatmaps_folder)
+                     heatmaps_folder=heatmaps_folder,
+                     detection_threshold=detection_threshold,
+                     local_maxima_smoothing=local_maxima_smoothing)
         print()
