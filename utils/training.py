@@ -50,8 +50,8 @@ def train_one_epoch(net : torch.nn.Module,
 
     net.train()         # set model to training mode
 
-    tot_error=0
-    tot_images=0
+    tot_error = 0
+    tot_images = 0
     start_time = time.time()
 
     for batch_idx, data in enumerate(dataloader_train):
@@ -77,7 +77,7 @@ def train_one_epoch(net : torch.nn.Module,
         scaler.step(optimizer)
         scaler.update()
 
-        tot_error += error*len(labels)      # weighted average
+        tot_error += error.item()*len(labels)      # weighted average
         tot_images += len(labels)
 
         loss = tot_error/tot_images
@@ -94,9 +94,8 @@ def train_one_epoch(net : torch.nn.Module,
         print(prefix + f"{batch_idx+1}/{len(dataloader_train)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, remaining: {remaining_time:.0f}s, lr: {optimizer.param_groups[0]['lr']:.3g}, loss: {loss:.3g}".ljust(100), end = '\r')
 
     print(prefix + f"{batch_idx+1}/{len(dataloader_train)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, lr: {optimizer.param_groups[0]['lr']:.3g}, loss: {loss:.3g}".ljust(100))
-    loss_np = (loss).detach().cpu().numpy()
 
-    return loss_np
+    return loss
 
 
 def validate(net : torch.nn.Module,
@@ -123,8 +122,8 @@ def validate(net : torch.nn.Module,
     """
     net.eval()         # set model to evaluation mode
 
-    tot_error=0
-    tot_images=0
+    tot_error = 0
+    tot_images = 0
     start_time = time.time()
 
     with torch.no_grad():
@@ -139,7 +138,7 @@ def validate(net : torch.nn.Module,
                 # Compute prediction error with the loss function
                 error = loss_function(outputs, labels)
 
-            tot_error += error*len(labels)      # weighted average
+            tot_error += error.item()*len(labels)      # weighted average
             tot_images += len(labels)
 
             loss = tot_error/tot_images
@@ -151,9 +150,8 @@ def validate(net : torch.nn.Module,
             print(prefix + f"{batch_idx+1}/{len(dataloader_val)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, remaining: {remaining_time:.0f}s, loss: {loss:.3g}".ljust(80), end = '\r')
 
     print(prefix + f"{batch_idx+1}/{len(dataloader_val)}, {epoch_time:.0f}s {batch_time*1e3:.0f}ms/step, loss: {loss:.3g}".ljust(80))
-    loss_np = (loss).detach().cpu().numpy()
 
-    return loss_np
+    return loss
 
 
 def train_model(net : torch.nn.Module,
