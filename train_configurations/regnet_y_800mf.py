@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
 
-from utils.dataset import VideoDataset, MyConcatDataset
-from utils.models import my_regnet_y_800mf
-from utils.training import train_model
+from detection.dataset import VideoDataset, MyConcatDataset
+from detection.models import my_regnet_y_800mf
+from detection.training import train_model
 
 
 "============== Configure here =============="

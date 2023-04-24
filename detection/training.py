@@ -4,7 +4,7 @@ import time
 import torch
 import torch.utils.data
 import torch.optim as optim
-from utils.storage import *
+from detection.storage import *
 
 from torch.optim.lr_scheduler import OneCycleLR, CyclicLR
 

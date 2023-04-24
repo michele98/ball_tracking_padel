@@ -1,4 +1,4 @@
-from utils.dataset import VideoDataset, VideoDatasetRNN, MyConcatDataset
+from detection.dataset import VideoDataset, VideoDatasetRNN, MyConcatDataset
 
 import torch
 from torch.utils.data._utils.collate import default_collate

@@ -8,9 +8,9 @@ from torchvision.transforms import ToTensor
 
 from torch.optim.lr_scheduler import OneCycleLR
 
-from utils.dataset import VideoDataset, MyConcatDataset
-from utils.models import TrackNetV2MSE
-from utils.training import train_model
+from detection.dataset import VideoDataset, MyConcatDataset
+from detection.models import TrackNetV2MSE
+from detection.training import train_model
 
 
 "============== Configure here =============="

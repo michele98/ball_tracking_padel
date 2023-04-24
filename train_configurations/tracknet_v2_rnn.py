@@ -7,9 +7,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
 
-from utils.dataset import VideoDatasetRNN, MyConcatDataset
-from utils.models import TrackNetV2RNN
-from utils.training import train_model
+from detection.dataset import VideoDatasetRNN, MyConcatDataset
+from detection.models import TrackNetV2RNN
+from detection.training import train_model
 from train_configurations.utils import collate_fn_rnn, BatchSamplerRNN
 from train_configurations.utils import collate_fn_rnn, BatchSamplerRNN
 

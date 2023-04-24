@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
 from torch.utils.data._utils.collate import default_collate
 
-from utils.dataset import VideoDatasetRNN, MyConcatDataset
-from utils.models import TrackNetV2RNN
-from utils.training import train_model
+from detection.dataset import VideoDatasetRNN, MyConcatDataset
+from detection.models import TrackNetV2RNN
+from detection.training import train_model
 
 
 "============== Configure here =============="
