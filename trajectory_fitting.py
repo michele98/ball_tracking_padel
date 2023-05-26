@@ -1,11 +1,19 @@
 import numpy as np
 from numba import jit
 
+"""All this is based on this paper: https://www.researchgate.net/publication/4246136_A_Novel_Data_Association_Algorithm_for_Object_Tracking_in_Clutter_with_Application_to_Tennis_Video_Analysis"""
+
 
 @jit
 def euclidean_distance(pos1, pos2):
     delta = pos1 - pos2
     return np.sqrt(delta[0]**2 + delta[1]**2)
+
+
+@jit
+def squared_distance(pos1, pos2):
+    delta = pos1 - pos2
+    return delta[0]**2 + delta[1]**2
 
 
 @jit
@@ -29,7 +37,7 @@ def find_seed_triplets(candidates: np.ndarray, n_candidates: np.ndarray, k: int,
 
     Returns
     -------
-    seed_triplets: np.ndarray of shape (num_triplets, 3).
+    seed_triplets: np.ndarray of shape (num_seed_triplets, 3).
         The second component contains the indices of the candidates in:
          - k-1
          - k
@@ -41,8 +49,11 @@ def find_seed_triplets(candidates: np.ndarray, n_candidates: np.ndarray, k: int,
     for i, candidate in enumerate(candidates[k, :n_candidates[k]]):
         for i_prev, prev_candidate in enumerate(candidates[k-1, :n_candidates[k-1]]):
             for i_next, next_candidate in enumerate(candidates[k+1, :n_candidates[k+1]]):
-                if euclidean_distance(candidate, prev_candidate) < radius and euclidean_distance(candidate, next_candidate) < radius:
+                if squared_distance(candidate, prev_candidate) < radius**2 and squared_distance(candidate, next_candidate) < radius**2:
                     seed_triplets_i.append([i_prev, i, i_next])
+
+    if len(seed_triplets_i) == 0:
+        return None
     return np.asarray(seed_triplets_i)
 
 
@@ -130,6 +141,7 @@ def find_next_triplet(trajectory: np.ndarray, candidates: np.ndarray, n_candidat
         number of candidates in each frame. Necessary for jit complation
     d_threshold : float
         maximum distance between the true position of the candidates and the estimated position
+        in the previous iteration
     window_size : int
     window_center : int
         center of the window in frames. The center must be the seed frame.
@@ -149,8 +161,8 @@ def find_next_triplet(trajectory: np.ndarray, candidates: np.ndarray, n_candidat
     for k in range(window_size):
         estimated_position = trajectory[k]
         for i in range(n_candidates[k+k0]):
-            d = euclidean_distance(candidates[k+k0,i], estimated_position)
-            if d<d_threshold:
+            d2 = squared_distance(candidates[k+k0,i], estimated_position)
+            if d2<d_threshold**2:
                 support_k.append(k+k0)
                 support_i.append(i)
 
@@ -173,10 +185,116 @@ def find_next_triplet(trajectory: np.ndarray, candidates: np.ndarray, n_candidat
     return k_min, k_mid, k_max, i_min, i_mid, i_max
 
 
-# TODO: implement trajectory cost
-# @jit
-# def trajectory_cost(trajectory, candidates, n_candidates, window_size, window_center):
-#     for k in range(len(candidates)):
-#         for j in range(len(candidates[k])):
+@jit
+def trajectory_cost(trajectory, candidates, n_candidates, window_size, window_center, d_threshold):
+    k0 = window_center - (window_size-1)//2
 
-#     return np.sum((true_trajectory - predicted_trajectory)**2)
+    cost = 0
+    for k, position in enumerate(trajectory):
+        for i in range(n_candidates[k+k0]):
+            d2 = squared_distance(position, candidates[k+k0,i])
+            d2 = min(d2, d_threshold**2)
+            cost += d2
+    return cost
+
+
+@jit
+def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
+    """Fit trajectories to position candidates.
+
+    Parameters
+    ----------
+    candidates : np.ndarray, shape (:, max_candidates, 2)
+        positions of the detection candidates.
+        The first dimension refers to the frames,
+        the second dimension to the candidate in each frame
+        and the third one to the x and y components: the first element is y, the second one x.
+    n_candidates : 1D np.ndarray
+        number of candidates in each frame. Necessary for jit complation
+    k_seed : int
+        seed frame from which to start calculating the ball trajectories.
+        It is the central frame of each seed triplet.
+    radius : int
+        maximum distance between candidates of different frames
+        to use them for a seed triplet, by default 100
+    d_threshold : float
+        maximum distance between the true position of the candidates and the estimated position
+        in the previous iteration
+    N : int
+        number of frames before and after to use for the trajectory fitting.
+        The window size will therefore be 2*N+1
+
+    Returns
+    -------
+    parameters : np.ndarray of shape (num_seed_triplets, 2, 2)
+        the parameters of the fitted parabolic trajectories for each seed triplet.
+        In the second dimension the order is: v, a
+    info : np.ndarray of shape (num_seed_triplets, 9)
+        Information about the candidates in the support for each seed triplet.
+        The values in the second component correspond respectively to:
+         - `'k_seed'`: index of the seed frame
+         - `'k_min'`: index of the first frame used to fit the trajectory
+         - `'k_mid'`: index of the second frame used to fit the trajectory
+         - `'k_max'`: index of the third frame used to fit the trajectory
+         - `'i_seed'`: index of the candidate in the seed frame
+         - `'i_min'`: index of the candidate in the first frame
+         - `'i_mid'`: index of the candidate in the second frame
+         - `'i_max'`: index of the candidate in the third frame
+         - `'iterations'`: number of iterations before convergence
+
+    trajectories : np.ndarray of shape (num_seed_triplets, 2*N+1, 2)
+        fitted trajectories along the whole window
+    costs : np.ndarray of shape (num_seed_triplets)
+        costs of each trajectory. It is computed as in equation (7) of the paper
+    """
+    window_size = 2*N+1
+    k_min = k_seed-1
+    k_mid = k_seed
+    k_max = k_seed+1
+
+    seed_triplets = find_seed_triplets(candidates, n_candidates, k_seed, radius=seed_radius)
+
+    if seed_triplets is None:
+        # print(f"found 0 seed triplet(s)")
+        return None, None, None, None
+
+    # print(f"found {len(seed_triplets)} seed triplet(s)")
+    info = np.zeros((len(seed_triplets), 9), dtype=np.uint32)
+    costs = np.zeros(len(seed_triplets), dtype=np.float32) + np.finfo(np.float32).max
+    parameters = np.zeros((len(seed_triplets), 2, 2)) # v, a
+    trajectories = np.zeros((len(seed_triplets), window_size, 2), dtype=np.float32) - 1
+
+    for s, seed_triplet in enumerate(seed_triplets):
+        i_min, i_mid, i_max = seed_triplet
+        i_seed = i_min
+
+        cost = np.sum(n_candidates[k_seed-N:k_seed+N+1])*d_threshold**2 # initialize cost to maximum possible
+        support = 3
+
+        v, a = estimate_parameters(candidates[k_min, i_min], candidates[k_mid, i_mid], candidates[k_max, i_max], 1, 1)
+        for i in range(N):
+            support_old = support
+            cost_old = cost
+            k_min_old, k_mid_old, k_max_old, i_min_old, i_mid_old, i_max = k_min, k_mid, k_max, i_min, i_mid, i_max
+
+            trajectory = compute_trajectory(candidates[k_min, i_min], v, a, window_size, k_seed-k_min) # centered around k_seed, start computing from k_min
+            cost = trajectory_cost(trajectory, candidates, n_candidates, window_size, k_seed, d_threshold)
+
+            k_min, k_mid, k_max, i_min, i_mid, i_max = find_next_triplet(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
+
+            support = k_max-k_min
+            if k_max == 0 or support <= support_old or cost_old <= cost:
+                support = support_old
+                cost = cost_old
+                k_min, k_mid, k_max, i_min, i_mid, i_max = k_min_old, k_mid_old, k_max_old, i_min_old, i_mid_old, i_max
+
+                trajectories[s] = trajectory
+                costs[s] = cost
+                parameters[s,0] = v
+                parameters[s,1] = a
+                for j, n in enumerate([k_seed, k_min, k_mid, k_max, i_seed, i_min, i_mid, i_max, i+1]):
+                    info[s, j] = n
+                break
+
+            v, a = estimate_parameters(candidates[k_min, i_min], candidates[k_mid, i_mid], candidates[k_max, i_max], k_mid-k_min, k_max-k_mid)
+    return parameters, info, trajectories, costs
