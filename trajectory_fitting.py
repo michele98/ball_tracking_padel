@@ -5,14 +5,18 @@ from numba import jit
 
 
 @jit
-def euclidean_distance(pos1, pos2):
+def euclidean_distance(pos1, pos2, axis=0):
     delta = pos1 - pos2
+    if axis==1:
+        delta = delta.T
     return np.sqrt(delta[0]**2 + delta[1]**2)
 
 
 @jit
-def squared_distance(pos1, pos2):
+def squared_distance(pos1, pos2, axis=0):
     delta = pos1 - pos2
+    if axis==1:
+        delta = delta.T
     return delta[0]**2 + delta[1]**2
 
 
