@@ -1,23 +1,9 @@
 import numpy as np
 from numba import jit
 
+from trajectories.utils import *
+
 """All this is based on this paper: https://www.researchgate.net/publication/4246136_A_Novel_Data_Association_Algorithm_for_Object_Tracking_in_Clutter_with_Application_to_Tennis_Video_Analysis"""
-
-
-@jit
-def euclidean_distance(pos1, pos2, axis=0):
-    delta = pos1 - pos2
-    if axis==1:
-        delta = delta.T
-    return np.sqrt(delta[0]**2 + delta[1]**2)
-
-
-@jit
-def squared_distance(pos1, pos2, axis=0):
-    delta = pos1 - pos2
-    if axis==1:
-        delta = delta.T
-    return delta[0]**2 + delta[1]**2
 
 
 @jit
@@ -129,7 +115,7 @@ def compute_trajectory(seed_position: np.ndarray, v: np.ndarray, a: np.ndarray, 
 
 
 @jit
-def find_next_triplet(trajectory: np.ndarray, candidates: np.ndarray, n_candidates: np.ndarray, d_threshold: float, window_size: int, window_center: int):
+def find_support(trajectory: np.ndarray, candidates: np.ndarray, n_candidates: np.ndarray, d_threshold: float, window_size: int, window_center: int):
     """Find the next triplet of
 
     Parameters
@@ -152,10 +138,8 @@ def find_next_triplet(trajectory: np.ndarray, candidates: np.ndarray, n_candidat
 
     Returns
     -------
-    k_min, k_mid, k_max: int
-        frame indices of the triplet
-    i_min, i_mid, i_max: int
-        candidate indices in their frame
+    support: np.ndarray of shape (support_size, 2)
+        frame indices in (:,0) and candidate indices in (:,1)
     """
     support_k = []
     support_i = []
@@ -170,27 +154,48 @@ def find_next_triplet(trajectory: np.ndarray, candidates: np.ndarray, n_candidat
                 support_k.append(k+k0)
                 support_i.append(i)
 
+    support = np.zeros((len(support_k), 2), dtype=np.int32)
+    support[:, 0] = support_k
+    support[:, 1] = support_i
+    return support
+
+
+@jit
+def find_next_triplet(support: np.ndarray):
+    """Find the next frame triplet from the given support.
+
+    Parameters
+    ----------
+    support: np.ndarray of shape (support_size, 2)
+        frame indices in (:,0) and candidate indices in (:,1)
+
+    Returns
+    -------
+    k_min, k_mid, k_max: int
+        frame indices of the triplet
+    i_min, i_mid, i_max: int
+        candidate indices in their frame
+    """
     k_min, k_mid, k_max = -1, -1, -1
     i_min, i_mid, i_max = -1, -1, -1
 
-    if len(support_k) >= 3:
-        k_min = support_k[0]
-        i_min = support_i[0]
+    if len(support) >= 3:
+        k_min = support[0,0]
+        i_min = support[0,1]
 
-        k_max = support_k[-1]
-        i_max = support_i[-1]
+        k_max = support[-1,0]
+        i_max = support[-1,1]
 
-        support_k = np.asarray(support_k)
-        s_mid = np.argmin(np.abs(np.abs(k_max-support_k) - np.abs(k_min-support_k)))
+        s_mid = find_middle_support_index(support)
 
-        k_mid = support_k[s_mid]
-        i_mid = support_i[s_mid]
+        k_mid = support[s_mid,0]
+        i_mid = support[s_mid,1]
 
     return k_min, k_mid, k_max, i_min, i_mid, i_max
 
 
 @jit
-def trajectory_cost(trajectory, candidates, n_candidates, window_size, window_center, d_threshold):
+def trajectory_cost(trajectory, candidates, n_candidates, d_threshold, window_size, window_center):
     k0 = window_center - (window_size-1)//2
 
     cost = 0
@@ -260,40 +265,43 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
     seed_triplets = find_seed_triplets(candidates, n_candidates, k_seed, radius=seed_radius)
 
     if seed_triplets is None:
-        return None, None, None, None
+        return None, None, None, None, None
 
-    info = np.zeros((len(seed_triplets), 9), dtype=np.uint32)
-    costs = np.zeros(len(seed_triplets), dtype=np.float32) + np.finfo(np.float32).max
     parameters = np.zeros((len(seed_triplets), 2, 2)) # v, a
+    info = np.zeros((len(seed_triplets), 10), dtype=np.uint32)
     trajectories = np.zeros((len(seed_triplets), window_size, 2), dtype=np.float32) - 1
+    supports = np.zeros((len(seed_triplets), window_size, 2), dtype=np.int32) -1
+    costs = np.zeros(len(seed_triplets), dtype=np.float32) + np.finfo(np.float32).max
 
     for s, seed_triplet in enumerate(seed_triplets):
         i_min, i_mid, i_max = seed_triplet
         i_seed = i_min
 
         cost_old = np.inf # initialize old cost to infinity
-        support_old = 0   # initialize old support to 0
+        support_old = np.array([[0]], dtype=np.int32)   # initialize old support to 0
 
         v, a = estimate_parameters(candidates[k_min, i_min], candidates[k_mid, i_mid], candidates[k_max, i_max], 1, 1)
         for i in range(N):
             trajectory = compute_trajectory(candidates[k_min, i_min], v, a, window_size, k_seed-k_min) # centered around k_seed, start computing from k_min
 
-            cost = trajectory_cost(trajectory, candidates, n_candidates, window_size, k_seed, d_threshold)
-            support = k_max-k_min
+            support = find_support(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
+            cost = trajectory_cost(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
 
-            if k_max == -1 or support <= support_old or cost > cost_old:
+            if k_max == -1 or len(support) <= len(support_old) or cost > cost_old:
                 trajectories[s] = trajectory
                 costs[s] = cost
                 parameters[s,0] = v
                 parameters[s,1] = a
-                for j, n in enumerate([k_seed, k_min, k_mid, k_max, i_seed, i_min, i_mid, i_max, i+1]):
+                supports[s, :len(support)] = support
+                for j, n in enumerate([k_seed, k_min, k_mid, k_max, i_seed, i_min, i_mid, i_max, len(support), i+1]):
                     info[s, j] = n
                 break
+
             support_old = support
             cost_old = cost
 
-            k_min, k_mid, k_max, i_min, i_mid, i_max = find_next_triplet(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
+            k_min, k_mid, k_max, i_min, i_mid, i_max = find_next_triplet(support)
             v, a = estimate_parameters(candidates[k_min, i_min], candidates[k_mid, i_mid], candidates[k_max, i_max], k_mid-k_min, k_max-k_mid)
 
     costs = np.where(np.isnan(costs), np.inf, costs)
-    return parameters, info, trajectories, costs
+    return parameters, info, trajectories, supports, costs
