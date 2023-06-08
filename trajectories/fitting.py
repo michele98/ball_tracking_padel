@@ -309,3 +309,109 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
 
     costs = np.where(np.isnan(costs), np.inf, costs) # turn nan costs to infinity
     return parameters, info, trajectories, supports, costs
+
+
+@jit
+def fit_trajectories_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
+    """Fit trajectories to position candidates.
+    Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
+    Same exact algorithm as fit_trajectories, but with a clearer workflow for a clearer explanation.
+    It takes an approx. 10% performance hit.
+
+    Parameters
+    ----------
+    candidates : np.ndarray, shape (:, max_candidates, 2)
+        positions of the detection candidates.
+        The first dimension refers to the frames,
+        the second dimension to the candidate in each frame
+        and the third one to the x and y components: the first element is y, the second one x.
+    n_candidates : 1D np.ndarray
+        number of candidates in each frame. Necessary for jit complation
+    k_seed : int
+        seed frame from which to start calculating the ball trajectories.
+        It is the central frame of each seed triplet.
+    radius : int
+        maximum distance between candidates of different frames
+        to use them for a seed triplet, by default 100
+    d_threshold : float
+        maximum distance between the true position of the candidates and the estimated position
+        in the previous iteration
+    N : int
+        number of frames before and after to use for the trajectory fitting.
+        The window size will therefore be 2*N+1
+
+    Returns
+    -------
+    parameters : np.ndarray of shape (num_seed_triplets, 2, 2)
+        the parameters of the fitted parabolic trajectories for each seed triplet.
+        In the second dimension the order is: v, a
+    info : np.ndarray of shape (num_seed_triplets, 9)
+        Information about the candidates in the support for each seed triplet.
+        The values in the second component correspond respectively to:
+         - `'k_seed'`: index of the seed frame
+         - `'k_min'`: index of the first frame used to fit the trajectory
+         - `'k_mid'`: index of the second frame used to fit the trajectory
+         - `'k_max'`: index of the third frame used to fit the trajectory
+         - `'i_seed'`: index of the candidate in the seed frame
+         - `'i_min'`: index of the candidate in the first frame
+         - `'i_mid'`: index of the candidate in the second frame
+         - `'i_max'`: index of the candidate in the third frame
+         - `'iterations'`: number of iterations before convergence
+
+    trajectories : np.ndarray of shape (num_seed_triplets, 2*N+1, 2)
+        fitted trajectories along the whole window
+    costs : np.ndarray of shape (num_seed_triplets)
+        costs of each trajectory. It is computed as in equation (7) of the paper
+    """
+    window_size = 2*N+1
+
+    seed_triplets = find_seed_triplets(candidates, n_candidates, k_seed, radius=seed_radius)
+
+    if seed_triplets is None:
+        return None, None, None, None, None
+
+    parameters = np.zeros((len(seed_triplets), 2, 2)) # v, a
+    info = np.zeros((len(seed_triplets), 10), dtype=np.uint32)
+    trajectories = np.zeros((len(seed_triplets), window_size, 2), dtype=np.float32) - 1
+    supports = np.zeros((len(seed_triplets), window_size, 2), dtype=np.int32) -1
+    costs = np.zeros(len(seed_triplets), dtype=np.float32) + np.finfo(np.float32).max
+
+    for s, seed_triplet in enumerate(seed_triplets):
+        k_min, k_mid, k_max = k_seed-1, k_seed, k_seed+1
+        i_min, i_mid, i_max = seed_triplet
+        i_seed = i_min
+
+        v, a = estimate_parameters(candidates[k_min, i_min], candidates[k_mid, i_mid], candidates[k_max, i_max], 1, 1)
+        trajectory = compute_trajectory(candidates[k_min, i_min], v, a, window_size, k_seed-k_min) # centered around k_seed, start computing from k_min
+
+        support = find_support(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
+        cost = trajectory_cost(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
+
+        for i in range(N):
+            k_min_next, k_mid_next, k_max_next, i_min_next, i_mid_next, i_max_next = find_next_triplet(support)
+
+            v_next, a_next = estimate_parameters(candidates[k_min_next, i_min_next], candidates[k_mid_next, i_mid_next], candidates[k_max_next, i_max_next], k_mid_next-k_min_next, k_max_next-k_mid_next)
+            trajectory_next = compute_trajectory(candidates[k_min_next, i_min_next], v_next, a_next, window_size, k_seed-k_min_next) # centered around k_seed, start computing from k_min
+
+            support_next = find_support(trajectory_next, candidates, n_candidates, d_threshold, window_size, k_seed)
+            cost_next = trajectory_cost(trajectory_next, candidates, n_candidates, d_threshold, window_size, k_seed)
+
+            if k_max_next == -1 or (k_min==k_min_next and k_max==k_max_next) or cost_next > cost:
+                trajectories[s] = trajectory
+                costs[s] = cost
+                parameters[s,0] = v
+                parameters[s,1] = a
+                supports[s, :len(support)] = support
+                for j, measurement in enumerate([k_seed, k_min, k_mid, k_max, i_seed, i_min, i_mid, i_max, len(support), i+1]):
+                    info[s, j] = measurement
+                break
+
+            v, a = v_next, a_next
+            trajectory = trajectory_next
+            support = support_next
+            cost = cost_next
+            k_min, k_mid, k_max, i_min, i_mid, i_max = k_min_next, k_mid_next, k_max_next, i_min_next, i_mid_next, i_max_next
+
+
+    costs = np.where(np.isnan(costs), np.inf, costs) # turn nan costs to infinity
+    return parameters, info, trajectories, supports, costs
