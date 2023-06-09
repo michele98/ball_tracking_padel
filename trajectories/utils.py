@@ -43,29 +43,29 @@ class Graph:
         return list(self.graph.keys())
 
     def dijkstra(self, start):
-        distances = {vertex: float('inf') for vertex in self.graph}
-        distances[start] = 0.
+        distances = {vertex: (float('inf'), float('inf')) for vertex in self.graph}
+        distances[start] = (0., 0.)
         predecessors = {vertex: None for vertex in self.graph}
 
-        priority_queue = [(0, start)]
+        priority_queue = [(0, 0, start)]
         while priority_queue:
-            current_distance, current_vertex = heapq.heappop(priority_queue)
+            current_distance, current_nodes, current_vertex = heapq.heappop(priority_queue)
 
-            if current_distance > distances[current_vertex]:
+            if (current_distance, current_nodes) > distances[current_vertex]:
                 continue
 
             for neighbor, weight in self.graph[current_vertex]:
                 distance = current_distance + weight
+                nodes = current_nodes + 1
 
-                if distance < distances[neighbor]:
-                    distances[neighbor] = distance
+                if (distance, nodes) < distances[neighbor]:
+                    distances[neighbor] = (distance, nodes)
                     predecessors[neighbor] = current_vertex
-                    heapq.heappush(priority_queue, (distance, neighbor))
+                    heapq.heappush(priority_queue, (distance, nodes, neighbor))
 
         return distances, predecessors
 
     def get_shortest_path(self, end, predecessors):
-
         path = []
         current_vertex = end
         while current_vertex is not None:
