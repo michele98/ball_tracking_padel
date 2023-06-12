@@ -545,6 +545,7 @@ def create_video(filename_src : str,
     for i, frame in enumerate(frame_gen):
         frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1].index
         if len(frame_index) != 1:
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
             continue
 
         # naive ball position taken from output csv
