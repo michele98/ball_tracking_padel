@@ -321,7 +321,8 @@ def create_output_csv(training_configuration,
         dataset_ids = [0 for _ in range(len(dataset))]
         dataset_info = dataset.get_info()
 
-    output_dict = {'dataset_id': dataset_ids, 'frame_num': frames}
+    frame_offset = 0 if is_rnn else config._sequence_length-1
+    output_dict = {'dataset_id': dataset_ids, 'frame_num': [f+frame_offset for f in frames]}
 
     print("\nComputing results:")
     if dataset_info['output_heatmap']:
@@ -601,7 +602,7 @@ def save_labeled_video(training_configuration,
                        show_ground_truth: bool = True,
                        detection_threshold: float = 0.1,
                        local_maxima_smoothing : float = 5,
-                       frame_offset : int = None):
+                       frame_offset : int = 0):
     """Save the video with the annotated ball position (as a red dot). If `show_ground_truth` is True,
     the ground truth is shown as a green dot.
 
