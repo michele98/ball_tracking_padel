@@ -482,7 +482,8 @@ def create_video(filename_src : str,
                  local_maxima_smoothing : float = None,
                  start_frame : int = None,
                  stop_frame : int = None,
-                 fps : int = None):
+                 fps : int = None,
+                 frame_offset : int = 0):
     """Save the video with the annotated ball position.
 
     Parameters
@@ -520,6 +521,8 @@ def create_video(filename_src : str,
         By default the last annotated frame in `position_df`.
     fps : int, optional
         frames per second of the video, by default the one of the source video file.
+    frame_offset : int, optional
+        offset frame and heatmap. by default 0
     """
     if start_frame is None:
         start_frame = position_df['frame_num'].min()
@@ -543,7 +546,7 @@ def create_video(filename_src : str,
                           frameSize=(w, h))
 
     for i, frame in enumerate(frame_gen):
-        frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1].index
+        frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1 + frame_offset].index
         if len(frame_index) != 1:
             out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
             continue
@@ -597,7 +600,8 @@ def save_labeled_video(training_configuration,
                        dataset_id: Union[int, list] = None,
                        show_ground_truth: bool = True,
                        detection_threshold: float = 0.1,
-                       local_maxima_smoothing : float = 5):
+                       local_maxima_smoothing : float = 5,
+                       frame_offset : int = None):
     """Save the video with the annotated ball position (as a red dot). If `show_ground_truth` is True,
     the ground truth is shown as a green dot.
 
@@ -624,6 +628,8 @@ def save_labeled_video(training_configuration,
     local_maxima_smoothing : float, optional
         if provided, applies gaussian smoothing to the heatmap before computing the local maxima.
         Only used if detection_threshold is provided. By default 5
+    frame_offset : int, optional
+        offset frame and heatmap. By default 0. It must be set to sequence_length-1 for videos of non-rnn models.
 
     Raises
     ------
@@ -678,5 +684,6 @@ def save_labeled_video(training_configuration,
                      show_ground_truth=show_ground_truth,
                      heatmaps_folder=heatmaps_folder,
                      detection_threshold=detection_threshold,
-                     local_maxima_smoothing=local_maxima_smoothing)
+                     local_maxima_smoothing=local_maxima_smoothing,
+                     frame_offset=frame_offset)
         print()
