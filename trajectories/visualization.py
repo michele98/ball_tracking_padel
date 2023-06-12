@@ -36,14 +36,15 @@ def show_fit(trajectory, candidates, k_seed, k_min, k_mid, k_max, i_seed, i_min,
         bbox = {'boxstyle': 'round',
                 'facecolor': trajectory_color,
                 'edgecolor': 'none',
-                'alpha': 0.3}
+                'alpha': 0.4}
 
         from matplotlib.font_manager import FontProperties
         font = FontProperties(family='sans-serif', weight='bold', size=12)
 
-        ax.annotate(k_seed, [candidates[k_min, i_min, 1], candidates[k_min, i_min, 0]], fontproperties=font, bbox=bbox, color='w')
-
-    ax.set_xlim(0, 640)
-    ax.set_ylim(360, 0)
+        ax.annotate(k_seed, [candidates[k_seed, i_seed, 1], candidates[k_seed, i_seed, 0]], fontproperties=font, bbox=bbox, color='k')
+        if show_fitting_points:
+            ax.annotate(k_min, [candidates[k_min, i_min, 1], candidates[k_min, i_min, 0]], fontproperties=font, bbox=bbox, color='w')
+            ax.annotate(k_mid, [candidates[k_mid, i_mid, 1], candidates[k_mid, i_mid, 0]], fontproperties=font, bbox=bbox, color='w')
+            ax.annotate(k_max, [candidates[k_max, i_max, 1], candidates[k_max, i_max, 0]], fontproperties=font, bbox=bbox, color='w')
 
     return ax

@@ -215,7 +215,7 @@ def trajectory_cost(trajectory, candidates, n_candidates, d_threshold, window_si
 
 @jit
 def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
-    """Fit trajectories to position candidates.
+    """Fit trajectories to position candidates for a seed frame.
     Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
 
     Parameters
@@ -245,7 +245,7 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
     parameters : np.ndarray of shape (num_seed_triplets, 2, 2)
         the parameters of the fitted parabolic trajectories for each seed triplet.
         In the second dimension the order is: v, a
-    info : np.ndarray of shape (num_seed_triplets, 9)
+    info : np.ndarray of shape (num_seed_triplets, 10)
         Information about the candidates in the support for each seed triplet.
         The values in the second component correspond respectively to:
          - `'k_seed'`: index of the seed frame
@@ -256,10 +256,13 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
          - `'i_min'`: index of the candidate in the first frame
          - `'i_mid'`: index of the candidate in the second frame
          - `'i_max'`: index of the candidate in the third frame
+         - `'n_support'`: number of support candidates
          - `'iterations'`: number of iterations before convergence
 
     trajectories : np.ndarray of shape (num_seed_triplets, 2*N+1, 2)
         fitted trajectories along the whole window
+    supports: np.ndarray of shape (num_seed_triplets, support_size, 2)
+        frame indices in (:,:,0) and candidate indices in (:,:,1)
     costs : np.ndarray of shape (num_seed_triplets)
         costs of each trajectory. It is computed as in equation (7) of the paper
     """
@@ -279,7 +282,7 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
     for s, seed_triplet in enumerate(seed_triplets):
         k_min, k_mid, k_max = k_seed-1, k_seed, k_seed+1
         i_min, i_mid, i_max = seed_triplet
-        i_seed = i_min
+        i_seed = i_mid
 
         cost_old = np.inf # initialize old cost to infinity
         support_old = np.array([[0]], dtype=np.int32)   # initialize old support to 0
@@ -311,9 +314,73 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
     return parameters, info, trajectories, supports, costs
 
 
+def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
+    """Fit a parabolic trajectory to a seed frame given position candidates.
+    Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
+    The trajectory with the lowest cost is then chosen.
+
+    Parameters
+    ----------
+    candidates : np.ndarray, shape (:, max_candidates, 2)
+        positions of the detection candidates.
+        The first dimension refers to the frames,
+        the second dimension to the candidate in each frame
+        and the third one to the x and y components: the first element is y, the second one x.
+    n_candidates : 1D np.ndarray
+        number of candidates in each frame. Necessary for jit complation
+    k_seed : int
+        seed frame from which to start calculating the ball trajectories.
+        It is the central frame of each seed triplet.
+    radius : int
+        maximum distance between candidates of different frames
+        to use them for a seed triplet, by default 100
+    d_threshold : float
+        maximum distance between the true position of the candidates and the estimated position
+        in the previous iteration
+    N : int
+        number of frames before and after to use for the trajectory fitting.
+        The window size will therefore be 2*N+1
+
+    Returns
+    -------
+    parameters : np.ndarray of shape (2, 2)
+        the parameters of the fitted parabolic trajectory.
+        The order is: v, a
+    info : dict
+        Information about the support candidates.
+        The values correspond respectively to:
+         - `'k_seed'`: index of the seed frame
+         - `'k_min'`: index of the first frame used to fit the trajectory
+         - `'k_mid'`: index of the second frame used to fit the trajectory
+         - `'k_max'`: index of the third frame used to fit the trajectory
+         - `'i_seed'`: index of the candidate in the seed frame
+         - `'i_min'`: index of the candidate in the first frame
+         - `'i_mid'`: index of the candidate in the second frame
+         - `'i_max'`: index of the candidate in the third frame
+         - `'iterations'`: number of iterations before convergence
+
+    trajectory : np.ndarray of shape (2*N+1, 2)
+        fitted trajectory along the whole window
+    supports: np.ndarray of shape (support_size, 2)
+        frame indices in (:,0) and candidate indices in (:,1)
+    cost : float
+        cost of the trajectory. It is computed as in equation (7) of the paper
+    """
+    parameters, info, trajectories, supports, costs = fit_trajectories(candidates, n_candidates, k_seed, seed_radius, d_threshold, N)
+    if costs is None:
+        return None, None, None, None, None
+
+    s = np.argmin(costs)
+
+    info_keys = ['k_seed','k_min','k_mid','k_max','i_seed','i_min','i_mid','i_max','n_support','iterations']
+    info_dict = {k: info[s,i] for i, k in enumerate(info_keys)}
+
+    return parameters[s], info_dict, trajectories[s], supports[s, :info[s,8]], costs[s]
+
+
 @jit
 def fit_trajectories_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
-    """Fit trajectories to position candidates.
+    """Fit trajectories to position candidates for a seed frame.
     Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
     Same exact algorithm as fit_trajectories, but with a clearer workflow for a clearer explanation.
     It takes an approx. 10% performance hit.
@@ -345,7 +412,7 @@ def fit_trajectories_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed:
     parameters : np.ndarray of shape (num_seed_triplets, 2, 2)
         the parameters of the fitted parabolic trajectories for each seed triplet.
         In the second dimension the order is: v, a
-    info : np.ndarray of shape (num_seed_triplets, 9)
+    info : np.ndarray of shape (num_seed_triplets, 10)
         Information about the candidates in the support for each seed triplet.
         The values in the second component correspond respectively to:
          - `'k_seed'`: index of the seed frame
@@ -356,10 +423,13 @@ def fit_trajectories_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed:
          - `'i_min'`: index of the candidate in the first frame
          - `'i_mid'`: index of the candidate in the second frame
          - `'i_max'`: index of the candidate in the third frame
+         - `'n_support'`: number of support candidates
          - `'iterations'`: number of iterations before convergence
 
     trajectories : np.ndarray of shape (num_seed_triplets, 2*N+1, 2)
         fitted trajectories along the whole window
+    supports: np.ndarray of shape (num_seed_triplets, support_size, 2)
+        frame indices in (:,:,0) and candidate indices in (:,:,1)
     costs : np.ndarray of shape (num_seed_triplets)
         costs of each trajectory. It is computed as in equation (7) of the paper
     """

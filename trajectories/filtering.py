@@ -16,19 +16,17 @@ def euclidean_distance(pos1, pos2, axis=0):
 def trajectory_distance(trajectory_1: np.ndarray, support_1: np.ndarray, k_seed_1: int, trajectory_2: np.ndarray, support_2: np.ndarray, k_seed_2: int):
     """Calculate the distance between 2 trajectories.
     The trajectories are the array of the estimated positions
-    and the supports are arrays of shape (3, 2):
-        [[k_min, i_min], [k_mid, i_mid], [k_max, i_max]]
 
     trajectory_1 : np.ndarray of shape (window_size,)
         first trajectory
-    support_1 : np.ndarray of shape (3, 2)
-        support of first trajectory
+    support_1 : np.ndarray of shape (:, 2)
+        supports of first trajectory
     k_seed_1 : int
         seed frame of the first trajectory
     trajectory_2 : np.ndarray of shape (window_size,)
         second trajectory
-    support_2 : np.ndarray of shape (3, 2)
-        support of second trajectory
+    support_2 : np.ndarray of shape (:, 2)
+        supports of second trajectory
     k_seed_2 : int
         seed frame of the second trajectory
 
