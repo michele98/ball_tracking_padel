@@ -30,33 +30,33 @@ The training schedule is divided in 3 phases, each of which has 2 subphases:
 
 Phase 1 (ground truth regime):
     - lr = 1e-3
-    - Epochs 1-5:
+    - Epochs 1-10:
         - p(tc) = 0.8
         - p(c)  = 0.1
         - p(gt) = 1
-    - Epochs 6-10:
+    - Epochs 11-15:
         - p(tc) = 0
         - p(c)  = 0.5
         - p(gt) = 0.8
 
 Phase 2 (hybrid regime):
     - lr = 1e-4
-    - Epochs 11-15:
+    - Epochs 16-20:
         - p(tc) = 0
         - p(c)  = 1/3
         - p(gt) = 1/2
-    - Epochs 15-20:
+    - Epochs 21-25:
         - p(tc) = 0
         - p(c)  = 1/5
         - p(gt) = 1/5
 
 Phase 3 (RNN regime):
     - lr = 1e-5
-    - Epochs 21-25:
+    - Epochs 26-30:
         - p(tc) = 0
         - p(c)  = 1/30
         - p(gt) = 1/30
-    - Epochs 25-30:
+    - Epochs 31-35:
         - p(tc) = 0
         - p(c)  = 1/200
         - p(gt) = 0
