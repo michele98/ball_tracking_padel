@@ -215,7 +215,8 @@ def compute_positions_noh(net : torch.nn.Module,
             inputs = data[0].to(device)
             labels = data[1].numpy()
 
-            outputs = net(inputs).to('cpu').numpy()
+            with torch.autocast(device_type=str(device), dtype=torch.float16):
+                outputs = net(inputs).to('cpu').numpy()
 
             for label, output in zip(labels, outputs):
                 true_positions.append(label[::-1])
