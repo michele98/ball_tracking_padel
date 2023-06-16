@@ -478,6 +478,7 @@ def annotate_frame(frame, predicted_positions, true_position=None, max_heatmap_v
 def create_video(filename_src : str,
                  filename_dst : str,
                  position_df : pd.DataFrame,
+                 filename_json : str = None,
                  show_ground_truth : bool = False,
                  heatmaps_folder : str = None,
                  detection_threshold : float = None,
@@ -487,6 +488,7 @@ def create_video(filename_src : str,
                  fps : int = None,
                  frame_offset : int = 0):
     """Save the video with the annotated ball position.
+    And produce a json with the local maxima for each frame.
 
     Parameters
     ----------
@@ -502,6 +504,8 @@ def create_video(filename_src : str,
          - `y_pred`
          - `x_true` (only if `show_ground_truth` is True)
          - `y_true` (only if `show_ground_truth` is True)
+    filename_json : str, optional
+        name of the json file onto which to save the local maxima.
     show_ground_truth : bool, optional
         by default False
     heatmaps_folder : string, optional
@@ -547,6 +551,8 @@ def create_video(filename_src : str,
                           fps=fps,
                           frameSize=(w, h))
 
+    local_maxima = []
+
     for i, frame in enumerate(frame_gen):
         frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1 + frame_offset].index
         if len(frame_index) != 1:
@@ -588,10 +594,27 @@ def create_video(filename_src : str,
             frame = cv2.addWeighted(frame, 0.5, heatmap, 0.5, 0)
 
         frame = annotate_frame(frame, predicted_positions, true_position, max_heatmap_value)
-
         out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
+        d = {'frame': i+start_frame}
+        if type(max_heatmap_value) is list:
+            d['local_maxima'] = [{'value': v,
+                                  'x': int(p[1]),
+                                  'y': int(p[0])}
+                                  for v, p in sorted(zip(max_heatmap_value, predicted_positions), key=lambda x: x[0], reverse=True)]
+        else:
+            d['local_maxima'] = [{'value': max_heatmap_value,
+                                 'x': predicted_positions[0],
+                                 'y': predicted_positions[1]}]
+        local_maxima.append(d)
+
     out.release()
+
+    if filename_json is not None:
+        with open(filename_json, 'w') as f:
+            json.dump(local_maxima, f, indent=2)
+        print(f'Local maxima saved in {filename_json}')
+
     print('done.')
 
 
@@ -675,6 +698,7 @@ def save_labeled_video(training_configuration,
     for i in dataset_id:
         src = os.path.join(dataset_info[i]['root'], 'video.mp4')
         dst = os.path.join(results_folder, f'video_{split.lower()}_{i}.mp4')
+        filename_json = os.path.join(results_folder, f'video_{split.lower()}_{i}.json')
 
         print(f"Video {i+1} of {len(dataset_id)}")
         print(f"src file: {src}")
@@ -682,6 +706,7 @@ def save_labeled_video(training_configuration,
 
         create_video(filename_src=src,
                      filename_dst=dst,
+                     filename_json=filename_json,
                      position_df=position_df.loc[position_df['dataset_id']==i],
                      show_ground_truth=show_ground_truth,
                      heatmaps_folder=heatmaps_folder,
