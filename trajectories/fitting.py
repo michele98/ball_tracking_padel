@@ -1,3 +1,4 @@
+import json
 import numpy as np
 from numba import jit
 
@@ -34,6 +35,10 @@ def find_seed_triplets(candidates: np.ndarray, n_candidates: np.ndarray, k: int,
          - k+1
         respectively.
     """
+
+    if k+1 >= len(n_candidates):
+        return None
+
     seed_triplets_i = []
 
     for i, candidate in enumerate(candidates[k, :n_candidates[k]]):
@@ -115,7 +120,7 @@ def compute_trajectory(seed_position: np.ndarray, v: np.ndarray, a: np.ndarray, 
 
 
 @jit
-def find_support(trajectory: np.ndarray, candidates: np.ndarray, n_candidates: np.ndarray, d_threshold: float, window_size: int, window_center: int):
+def find_support(trajectory: np.ndarray, candidates: np.ndarray, n_candidates: np.ndarray, d_threshold: float, window_center: int):
     """Find the support of the given trajectory
 
     Parameters
@@ -144,9 +149,10 @@ def find_support(trajectory: np.ndarray, candidates: np.ndarray, n_candidates: n
     support_k = []
     support_i = []
 
+    window_size = len(trajectory)
     k0 = window_center - (window_size-1)//2
 
-    for k in range(window_size):
+    for k in range(min(window_size, len(n_candidates)-k0)):
         estimated_position = trajectory[k]
 
         candidate_idx = -1
@@ -201,20 +207,21 @@ def find_next_triplet(support: np.ndarray):
 
 
 @jit
-def trajectory_cost(trajectory, candidates, n_candidates, d_threshold, window_size, window_center):
+def trajectory_cost(trajectory: np.ndarray, candidates: np.ndarray, n_candidates: np.ndarray, d_threshold: float, window_center: int):
+    window_size = len(trajectory)
     k0 = window_center - (window_size-1)//2
 
     cost = 0
-    for k, position in enumerate(trajectory):
+    for k in range(min(window_size, len(n_candidates)-k0)):
         for i in range(n_candidates[k+k0]):
-            d2 = squared_distance(position, candidates[k+k0,i])
+            d2 = squared_distance(trajectory[k], candidates[k+k0,i])
             d2 = min(d2, d_threshold**2)
             cost += d2
     return cost
 
 
 @jit
-def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
+def fit_trajectories_on_seed(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
     """Fit trajectories to position candidates for a seed frame.
     Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
 
@@ -274,7 +281,7 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
         return None, None, None, None, None
 
     parameters = np.zeros((len(seed_triplets), 2, 2)) # v, a
-    info = np.zeros((len(seed_triplets), 10), dtype=np.uint32)
+    info = np.zeros((len(seed_triplets), 10), dtype=np.int32)
     trajectories = np.zeros((len(seed_triplets), window_size, 2), dtype=np.float32) - 1
     supports = np.zeros((len(seed_triplets), window_size, 2), dtype=np.int32) -1
     costs = np.zeros(len(seed_triplets), dtype=np.float32) + np.finfo(np.float32).max
@@ -291,8 +298,8 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
         for i in range(N):
             trajectory = compute_trajectory(candidates[k_min, i_min], v, a, window_size, k_seed-k_min) # centered around k_seed, start computing from k_min
 
-            support = find_support(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
-            cost = trajectory_cost(trajectory, candidates, n_candidates, d_threshold, window_size, k_seed)
+            support = find_support(trajectory, candidates, n_candidates, d_threshold, k_seed)
+            cost = trajectory_cost(trajectory, candidates, n_candidates, d_threshold, k_seed)
 
             if k_max == -1 or len(support) <= len(support_old) or cost > cost_old:
                 trajectories[s] = trajectory
@@ -314,7 +321,7 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: i
     return parameters, info, trajectories, supports, costs
 
 
-def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
+def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float = 20, d_threshold: float = 5, N: int = 10):
     """Fit a parabolic trajectory to a seed frame given position candidates.
     Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
     The trajectory with the lowest cost is then chosen.
@@ -331,15 +338,15 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
     k_seed : int
         seed frame from which to start calculating the ball trajectories.
         It is the central frame of each seed triplet.
-    radius : int
+    seed_radius : float, optional
         maximum distance between candidates of different frames
-        to use them for a seed triplet, by default 100
-    d_threshold : float
+        to use them for a seed triplet. By default 20
+    d_threshold : float, optional
         maximum distance between the true position of the candidates and the estimated position
-        in the previous iteration
-    N : int
+        in the previous iteration. By default 5
+    N : int : int, optional
         number of frames before and after to use for the trajectory fitting.
-        The window size will therefore be 2*N+1
+        The window size will therefore be 2*N+1. By default 10
 
     Returns
     -------
@@ -349,37 +356,100 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
     info : dict
         Information about the support candidates.
         The values correspond respectively to:
-         - `'k_seed'`: index of the seed frame
-         - `'k_min'`: index of the first frame used to fit the trajectory
-         - `'k_mid'`: index of the second frame used to fit the trajectory
-         - `'k_max'`: index of the third frame used to fit the trajectory
-         - `'i_seed'`: index of the candidate in the seed frame
-         - `'i_min'`: index of the candidate in the first frame
-         - `'i_mid'`: index of the candidate in the second frame
-         - `'i_max'`: index of the candidate in the third frame
-         - `'iterations'`: number of iterations before convergence
-
-    trajectory : np.ndarray of shape (2*N+1, 2)
-        fitted trajectory along the whole window
-    supports: np.ndarray of shape (support_size, 2)
-        frame indices in (:,0) and candidate indices in (:,1)
-    cost : float
-        cost of the trajectory. It is computed as in equation (7) of the paper
+         - `'k_seed'`: int, index of the seed frame
+         - `'k_min'`: int, index of the first frame used to fit the trajectory
+         - `'k_mid'`: int, index of the second frame used to fit the trajectory
+         - `'k_max'`: int, index of the third frame used to fit the trajectory
+         - `'i_seed'`: int, index of the candidate in the seed frame
+         - `'i_min'`: int, index of the candidate in the first frame
+         - `'i_mid'`: int, index of the candidate in the second frame
+         - `'i_max'`: int, index of the candidate in the third frame
+         - `'iterations'`: int, number of iterations before convergence
+         - `'trajectory'` : np.ndarray of shape (2*N+1, 2), fitted trajectory along the whole window
+         - `'supports'`: np.ndarray of shape (support_size, 2), frame indices in (:,0) and candidate indices in (:,1)
+         - `'cost'` : float, cost of the trajectory. It is computed as in equation (7) of the paper
     """
-    parameters, info, trajectories, supports, costs = fit_trajectories(candidates, n_candidates, k_seed, seed_radius, d_threshold, N)
+    parameters, info, trajectories, supports, costs = fit_trajectories_on_seed(candidates, n_candidates, k_seed, seed_radius, d_threshold, N)
+
+    info_dict = {'found_trajectory': False,
+                 'k_seed': k_seed,
+                 'seed_radius': seed_radius,
+                 'd_threshold': d_threshold,
+                 'N': N}
     if costs is None:
-        return None, None, None, None, None
+        return info_dict
 
     s = np.argmin(costs)
 
-    info_keys = ['k_seed','k_min','k_mid','k_max','i_seed','i_min','i_mid','i_max','n_support','iterations']
-    info_dict = {k: info[s,i] for i, k in enumerate(info_keys)}
+    if info[s,8] == 0:
+        # edge case: no trajectory found if the support set size is 0
+        return info_dict
 
-    return parameters[s], info_dict, trajectories[s], supports[s, :info[s,8]], costs[s]
+    info_dict['found_trajectory'] = True
+
+    for i, k in enumerate(['k_seed','k_min','k_mid','k_max','i_seed','i_min','i_mid','i_max','n_support','iterations']):
+        info_dict[k] = info[s,i]
+
+    info_dict['v'] = parameters[s,0]
+    info_dict['a'] = parameters[s,1]
+    info_dict['trajectory'] = trajectories[s]
+    info_dict['support'] = supports[s, :info[s,8]]
+    info_dict['cost'] = costs[s]
+
+    return info_dict
+
+
+def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_frame: int = 0, seed_radius: float = 20, d_threshold: float = 5, N: int = 10):
+    info = {'parameters': {'seed_radius': seed_radius, 'd_threshold': d_threshold, 'N': N}}
+    info['trajectories'] = []
+
+    print("Fitting trajectories:")
+    for k in range(len(candidates)):
+        print(f'{k+1} of {len(candidates)}', end='\r')
+        trajectory_dict = fit_trajectory(candidates, n_candidates, k, seed_radius, d_threshold, N)
+
+        trajectory_dict['k_seed'] += starting_frame
+        if trajectory_dict['found_trajectory']:
+            for key in ['k_min', 'k_mid', 'k_max']:
+                trajectory_dict[key] += starting_frame
+            trajectory_dict['support'][:,0] += starting_frame
+
+        for key in info['parameters'].keys():
+            del trajectory_dict[key]
+
+        info['trajectories'].append(trajectory_dict)
+
+    print(f'{k+1} of {len(candidates)}')
+    print('Done.')
+
+    return info
+
+
+def trajectories_to_json(info: dict, filename: str, indent=None):
+    td = []
+    for ti in info['trajectories']:
+        d = {}
+        for k, v in ti.items():
+            if type(v) is np.ndarray:
+                value = v.tolist()
+            elif type(v) is np.int32:
+                value = int(v)
+            elif type(v) is np.float32:
+                value = float(v)
+            else:
+                value = v
+            d[k] = value
+        td.append(d)
+
+    d = {'parameters': info['parameters']}
+    d['trajectories'] = td
+
+    with open(filename, 'w') as f:
+        json.dump(d, f, indent=indent)
 
 
 @jit
-def fit_trajectories_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
+def fit_trajectories_on_seed_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
     """Fit trajectories to position candidates for a seed frame.
     Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
     Same exact algorithm as fit_trajectories, but with a clearer workflow for a clearer explanation.
@@ -441,7 +511,7 @@ def fit_trajectories_2(candidates: np.ndarray, n_candidates: np.ndarray, k_seed:
         return None, None, None, None, None
 
     parameters = np.zeros((len(seed_triplets), 2, 2)) # v, a
-    info = np.zeros((len(seed_triplets), 10), dtype=np.uint32)
+    info = np.zeros((len(seed_triplets), 10), dtype=np.int32)
     trajectories = np.zeros((len(seed_triplets), window_size, 2), dtype=np.float32) - 1
     supports = np.zeros((len(seed_triplets), window_size, 2), dtype=np.int32) -1
     costs = np.zeros(len(seed_triplets), dtype=np.float32) + np.finfo(np.float32).max

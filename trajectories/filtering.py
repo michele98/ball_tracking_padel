@@ -1,6 +1,9 @@
 import numpy as np
 from numba import jit
 
+import networkx as nx
+from networkx import DiGraph, dijkstra_path
+
 """All this is based on this paper: https://www.researchgate.net/publication/4246136_A_Novel_Data_Association_Algorithm_for_Object_Tracking_in_Clutter_with_Application_to_Tennis_Video_Analysis"""
 
 
@@ -64,3 +67,51 @@ def trajectory_distance(trajectory_1: np.ndarray, support_1: np.ndarray, k_seed_
                 distance = np.min(euclidean_distance(trajectory_2[dk], trajectory_1[:len(trajectory_1)-dk], axis=1))
 
     return distance
+
+
+def build_trajectory_graph(trajectory_info: dict):
+    """Build trajectory graph for the found trajectories
+
+    Parameters
+    ----------
+    trajectory_info : dict
+        contains the trajectory info
+
+    Returns
+    -------
+    trajectory_graph: networkx.DiGraph
+        weighted directed graph linking the trajectories
+    """
+    print("Building trajectory graph:")
+    trajectory_graph = DiGraph()
+
+    N = trajectory_info['parameters']['N']
+
+    for i in range(len(trajectory_info['trajectories'])):
+        print(f"{i+1} of {len(trajectory_info['trajectories'])}", end='\r')
+        if not trajectory_info['trajectories'][i]['found_trajectory']:
+            continue
+        for j in range(i, min(i+N, len(trajectory_info['trajectories']))):
+            if not trajectory_info['trajectories'][j]['found_trajectory']:
+                continue
+            t1 = trajectory_info['trajectories'][i]['trajectory']
+            s1 = trajectory_info['trajectories'][i]['support']
+            k1 = trajectory_info['trajectories'][i]['k_seed']
+
+            t2 = trajectory_info['trajectories'][j]['trajectory']
+            s2 = trajectory_info['trajectories'][j]['support']
+            k2 = trajectory_info['trajectories'][j]['k_seed']
+
+            d = trajectory_distance(t1, s1, k1, t2, s2, k2)
+
+            if d != np.inf and i!=j:
+                trajectory_graph.add_edge(k1, k2, weight=d)
+
+    print(f"{i+1} of {len(trajectory_info['trajectories'])}")
+    print("Done.")
+    return trajectory_graph
+
+
+def find_shortest_paths(trajectory_graph: nx.DiGraph):
+    wcc = list(nx.weakly_connected_components(trajectory_graph))
+    return [dijkstra_path(trajectory_graph, min(el), max(el)) for el in wcc]
