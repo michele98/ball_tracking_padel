@@ -367,7 +367,7 @@ def show_neighboring_trajectories(frame_idx,
     return im2
 
 
-def create_trajectory_video(filename, train_configuration, show_heatmaps=True, training_phase=None, split='val_1', dpi=100, num_frames=None, **kwargs):
+def create_trajectory_video(filename, train_configuration, training_phase=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, **kwargs):
     starting_frame, candidates, n_candidates, values = get_candidates(train_configuration, training_phase, split)
 
     fitting_info = fit_trajectories(candidates, n_candidates, starting_frame, N=10, seed_radius=40, d_threshold=10)
