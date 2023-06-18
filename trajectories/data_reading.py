@@ -6,7 +6,7 @@ import pandas as pd
 from detection.testing import _get_results_folder
 
 
-def get_frame(training_configuration, frame_index, split='val_1', size=None):
+def get_video_source(training_configuration, split='val_1'):
     config = training_configuration.Config()
 
     # open dataset info json
@@ -17,6 +17,12 @@ def get_frame(training_configuration, frame_index, split='val_1', size=None):
         video_source = os.path.join(dataset_info['root'], 'video.mp4')
     else:
         video_source = os.path.join('../datasets', split, 'video.mp4')
+
+    return video_source
+
+
+def get_frame(training_configuration, frame_index, split='val_1', size=None):
+    video_source = get_video_source(training_configuration, split)
 
     # print(f'Video source: {video_source}')
     cap = cv2.VideoCapture(video_source)
@@ -32,7 +38,7 @@ def get_frame(training_configuration, frame_index, split='val_1', size=None):
     return frame
 
 
-def get_heatmap(training_configuration, frame_index, split='val_1', training_phase=None, w_heatmap=640, h_heatmap=360):
+def get_heatmap(training_configuration, frame_index, split='val_1', training_phase=None):
     config = training_configuration.Config()
 
     checkpoint_folder = config._checkpoint_folder
@@ -55,7 +61,9 @@ def get_heatmap(training_configuration, frame_index, split='val_1', training_pha
     if len(heatmap_index) != 1:
         return None
 
-    return cv2.imread(os.path.join(heatmaps_folder, f"{heatmap_index[0]}".zfill(6)+'.png'), cv2.IMREAD_GRAYSCALE)/255
+    heatmap = cv2.imread(os.path.join(heatmaps_folder, f"{heatmap_index[0]}".zfill(6)+'.png'), cv2.IMREAD_GRAYSCALE)
+    return (heatmap*df['max_values'][heatmap_index[0]]).astype(np.uint8)
+
 
 
 def get_candidates_json(training_configuration, training_phase: str = None, split: str = 'val_1'):
@@ -65,6 +73,9 @@ def get_candidates_json(training_configuration, training_phase: str = None, spli
     checkpoint_folder = config._checkpoint_folder
     if training_phase is not None:
         checkpoint_folder = os.path.join(checkpoint_folder, training_phase)
+
+    if not 'val' in split and not 'train' in split:
+        split += '_0'
 
     results_folder = _get_results_folder(checkpoint_folder, None)
     candidates_fileame = os.path.join(results_folder, f'video_{split}.json')
@@ -105,7 +116,7 @@ def get_candidates(training_configuration, training_phase: str = None, split: st
     num_frames = end_frame - starting_frame + 1
 
     n_candidates = np.zeros(num_frames, dtype=int) # number of the maxima
-    candidates = np.zeros((num_frames, max_num_candidates, 2), dtype=int) # x-y coordinates of the maxima
+    candidates = np.zeros((num_frames, max_num_candidates, 2), dtype=int) - 1 # x-y coordinates of the maxima
     values = np.zeros((num_frames, max_num_candidates), dtype=float) # maximum values of the maxima
 
     for d in detections:

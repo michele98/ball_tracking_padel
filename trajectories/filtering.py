@@ -122,3 +122,95 @@ def find_shortest_paths(trajectory_graph: nx.DiGraph):
         except nx.NetworkXNoPath as e:
             pass
     return paths
+
+
+def build_path_mapping(fitting_info: dict, shortest_paths: list):
+    """Build mapping from each frame to the corresponding fitted path
+
+    Parameters
+    ----------
+    fitting_info : dict
+        _description_
+    shortest_paths : list
+        shortest path in the trajectory graph
+
+    Returns
+    -------
+    mapping : dict
+        mapping from frame to corresponding node in the graph.
+        It associates a trajectory to each frame.
+
+        If no trajectory is found, the value is None.
+    """
+    trajectories_info = fitting_info['trajectories']
+
+    frame_sequence = [t['k_seed'] for t in trajectories_info]
+    path = [p for path in shortest_paths for p in path]
+
+    first_frames = [trajectories_info[frame_sequence.index(node)]['k_min'] for node in path]
+    last_frames = [trajectories_info[frame_sequence.index(node)]['k_max'] for node in path]
+
+    mapping = {}
+    for frame_idx in range(trajectories_info[0]['k_seed'], trajectories_info[-1]['k_seed']):
+        mapping[frame_idx] = None
+        for k_min, k_seed, k_max in zip(first_frames, path, last_frames):
+            if k_min <= frame_idx and k_max >= frame_idx:
+                mapping[frame_idx] = k_seed
+                break
+    return mapping
+
+
+def find_next_node(frame_idx, path_mapping):
+    node = path_mapping[frame_idx]
+    next_node = None
+    next_idx = None
+    for f, n in path_mapping.items():
+        if f <= frame_idx:
+            continue
+        if n!=node:
+            next_node = n
+            next_idx = f
+            break
+    return next_idx, next_node
+
+
+def find_next_nodes(frame_idx, path_mapping, n=1):
+    if n==0:
+        return []
+    next_nodes = []
+    idx = frame_idx
+    for _ in range(n):
+        idx, next_node = find_next_node(idx, path_mapping)
+        if next_node is None:
+            break
+        next_nodes.append(next_node)
+
+    return next_nodes
+
+
+def find_prev_node(frame_idx, path_mapping):
+    node = path_mapping[frame_idx]
+    prev_node = None
+    prev_idx = None
+    for f, n in path_mapping.items():
+        if n!=node:
+            prev_node = n
+            prev_idx = f
+            continue
+        if f >= frame_idx:
+            break
+    return prev_idx, prev_node
+
+
+def find_prev_nodes(frame_idx, path_mapping, n=1):
+    if n==0:
+        return []
+    previous_nodes = []
+    idx = frame_idx
+    for _ in range(n):
+        idx, previous_node = find_prev_node(idx, path_mapping)
+        if previous_node is None:
+            break
+        previous_nodes.append(previous_node)
+
+    return list(reversed(previous_nodes))
