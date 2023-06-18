@@ -69,13 +69,13 @@ def trajectory_distance(trajectory_1: np.ndarray, support_1: np.ndarray, k_seed_
     return distance
 
 
-def build_trajectory_graph(trajectory_info: dict):
+def build_trajectory_graph(fitting_info: dict):
     """Build trajectory graph for the found trajectories
 
     Parameters
     ----------
-    trajectory_info : dict
-        contains the trajectory info
+    fitting_info : dict
+        contains the fitting info
 
     Returns
     -------
@@ -85,33 +85,40 @@ def build_trajectory_graph(trajectory_info: dict):
     print("Building trajectory graph:")
     trajectory_graph = DiGraph()
 
-    N = trajectory_info['parameters']['N']
+    N = fitting_info['parameters']['N']
+    trajectory_info = fitting_info['trajectories']
 
-    for i in range(len(trajectory_info['trajectories'])):
-        print(f"{i+1} of {len(trajectory_info['trajectories'])}", end='\r')
-        if not trajectory_info['trajectories'][i]['found_trajectory']:
+    for i in range(len(trajectory_info)):
+        print(f"{i+1} of {len(trajectory_info)}", end='\r')
+        if not trajectory_info[i]['found_trajectory']:
             continue
-        for j in range(i, min(i+N, len(trajectory_info['trajectories']))):
-            if not trajectory_info['trajectories'][j]['found_trajectory']:
+        for j in range(i, min(i+N, len(trajectory_info))):
+            if not trajectory_info[j]['found_trajectory']:
                 continue
-            t1 = trajectory_info['trajectories'][i]['trajectory']
-            s1 = trajectory_info['trajectories'][i]['support']
-            k1 = trajectory_info['trajectories'][i]['k_seed']
+            t1 = trajectory_info[i]['trajectory']
+            s1 = trajectory_info[i]['support']
+            k1 = trajectory_info[i]['k_seed']
 
-            t2 = trajectory_info['trajectories'][j]['trajectory']
-            s2 = trajectory_info['trajectories'][j]['support']
-            k2 = trajectory_info['trajectories'][j]['k_seed']
+            t2 = trajectory_info[j]['trajectory']
+            s2 = trajectory_info[j]['support']
+            k2 = trajectory_info[j]['k_seed']
 
             d = trajectory_distance(t1, s1, k1, t2, s2, k2)
 
             if d != np.inf and i!=j:
                 trajectory_graph.add_edge(k1, k2, weight=d)
 
-    print(f"{i+1} of {len(trajectory_info['trajectories'])}")
+    print(f"{i+1} of {len(trajectory_info)}")
     print("Done.")
     return trajectory_graph
 
 
 def find_shortest_paths(trajectory_graph: nx.DiGraph):
     wcc = list(nx.weakly_connected_components(trajectory_graph))
-    return [dijkstra_path(trajectory_graph, min(el), max(el)) for el in wcc]
+    paths = []
+    for el in wcc:
+        try:
+            paths.append(dijkstra_path(trajectory_graph, min(el), max(el)))
+        except nx.NetworkXNoPath as e:
+            pass
+    return paths

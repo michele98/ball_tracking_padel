@@ -400,8 +400,59 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
 
 
 def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_frame: int = 0, seed_radius: float = 20, d_threshold: float = 5, N: int = 10):
-    info = {'parameters': {'seed_radius': seed_radius, 'd_threshold': d_threshold, 'N': N}}
-    info['trajectories'] = []
+    """Fit trajectories on the given position candidates.
+
+    Parameters
+    ----------
+    candidates : np.ndarray, shape (:, max_candidates, 2)
+        positions of the detection candidates.
+        The first dimension refers to the frames,
+        the second dimension to the candidate in each frame
+        and the third one to the x and y components: the first element is y, the second one x.
+    n_candidates : 1D np.ndarray
+        number of candidates in each frame. Necessary for jit complation
+    starting_frame : int, optional
+        index of the first frame in the video onto which the trajectory fitting is done, by default 0
+    seed_radius : float, optional
+        maximum distance between candidates of different frames
+        to use them for a seed triplet. By default 20
+    d_threshold : float, optional
+        maximum distance between the true position of the candidates and the estimated position
+        in the previous iteration. By default 5
+    N : int : int, optional
+        number of frames before and after to use for the trajectory fitting.
+        The window size will therefore be 2*N+1. By default 10
+
+    Returns
+    -------
+    fitting_info : dict
+        it has 2 main entries, each of which has subentries:
+         - `'parameters'` : dict\\
+            this contains the parameters used for fitting (passed as input):
+            - `'seed_radius'` : float
+            - `'d_threshold'` : float
+            - `'N'` : int
+         - `'trajectories'` : list of dict\\
+            each entry is a dictionary with the fitted trajectory for each frame:
+             - `'found_trajectory'` : bool,
+             - `'k_seed'` : int, index of the seed frame
+             - `'k_min'` : int, index of the first frame used to fit the trajectory
+             - `'k_mid'` : int, index of the second frame used to fit the trajectory
+             - `'k_max'` : int, index of the third frame used to fit the trajectory
+             - `'i_seed'` : int, index of the candidate in the seed frame
+             - `'i_min'` : int, index of the candidate in the first frame
+             - `'i_mid'` : int, index of the candidate in the second frame
+             - `'i_max'` : int, index of the candidate in the third frame
+             - `'n_support'` : int, number of support candidates
+             - `'iterations'` : int, number of iterations before convergence
+             - `'v'` : np.ndarray of shape `(2,)`, velocity at `k_min`
+             - `'a'` : np.ndarray of shape `(2,)`, acceleration
+             - `'trajectory'` : np.ndarray of shape `(2N+1, 2)`, estimated trajectory from `v` and `a`, centered on `k_seed`
+             - `'support'` : np.ndarray of shape `(n_support, 2)`
+             - `'cost'` : float, cost of the trajectory
+    """
+    fitting_info = {'parameters': {'seed_radius': seed_radius, 'd_threshold': d_threshold, 'N': N}}
+    fitting_info['trajectories'] = []
 
     print("Fitting trajectories:")
     for k in range(len(candidates)):
@@ -414,15 +465,15 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_
                 trajectory_dict[key] += starting_frame
             trajectory_dict['support'][:,0] += starting_frame
 
-        for key in info['parameters'].keys():
+        for key in fitting_info['parameters'].keys():
             del trajectory_dict[key]
 
-        info['trajectories'].append(trajectory_dict)
+        fitting_info['trajectories'].append(trajectory_dict)
 
     print(f'{k+1} of {len(candidates)}')
     print('Done.')
 
-    return info
+    return fitting_info
 
 
 def trajectories_to_json(info: dict, filename: str, indent=None):

@@ -6,7 +6,7 @@ import pandas as pd
 from detection.testing import _get_results_folder
 
 
-def get_frame(training_configuration, frame_index, split='val_1', w_frame=1280, h_frame=720):
+def get_frame(training_configuration, frame_index, split='val_1', size=None):
     config = training_configuration.Config()
 
     # open dataset info json
@@ -26,7 +26,10 @@ def get_frame(training_configuration, frame_index, split='val_1', w_frame=1280, 
         print('Failed to read frame')
         return None
 
-    return cv2.cvtColor(cv2.resize(frame, (w_frame, h_frame)), cv2.COLOR_BGR2RGB)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    if size is not None:
+        frame = cv2.resize(frame, size)
+    return frame
 
 
 def get_heatmap(training_configuration, frame_index, split='val_1', training_phase=None, w_heatmap=640, h_heatmap=360):
@@ -109,6 +112,8 @@ def get_candidates(training_configuration, training_phase: str = None, split: st
         i = d['frame'] - starting_frame
         n_candidates[i] = len(d['local_maxima'])
         for j, local_maximum in enumerate(d['local_maxima']):
+            if j >= max_num_candidates:
+                break
             candidates[i,j,0] = local_maximum['x']
             candidates[i,j,1] = local_maximum['y']
             values[i,j] = local_maximum['value']
