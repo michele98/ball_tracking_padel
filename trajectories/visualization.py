@@ -300,13 +300,13 @@ def show_neighboring_trajectories(frame_idx,
                                   frame,
                                   heatmap=None,
                                   color='w',
-                                  alpha=0.8,
+                                  alpha=1,
                                   num_prev=2,
                                   num_next=3,
-                                  color_prev='r',
+                                  color_prev='y',
                                   color_next='g',
-                                  alpha_prev=0.3,
-                                  alpha_next=0.3,
+                                  alpha_prev=0.6,
+                                  alpha_next=0.6,
                                   ax=None, **kwargs):
     node = path_mapping[frame_idx]
     if heatmap is not None: # show heatmap and detection candidates
@@ -412,13 +412,7 @@ def create_trajectory_video(filename, train_configuration, show_heatmaps=True, t
                                             frame,
                                             heatmap,
                                             ax=ax,
-                                            num_prev=2,
-                                            num_next=3,
                                             line_style='-',
-                                            alpha=1,
-                                            alpha_prev=0.6,
-                                            alpha_next=0.6,
-                                            color_prev='y',
                                             linewidth=1.5,
                                             **kwargs)
 
