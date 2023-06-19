@@ -105,11 +105,12 @@ def show_single_trajectory(fitting_info,
                            annotate=True,
                            show_fitting_points=False,
                            trajectory_color='y',
-                           fontsize=12,
+                           fontsize=11,
                            dpi=100,
                            alpha=0.8,
                            line_style='.-',
                            verbose=True,
+                           dark_mode=True,
                            **kwargs):
     if ax is None:
         w, h = 1280, 720
@@ -180,29 +181,43 @@ def show_single_trajectory(fitting_info,
         if exists_trajectory:
             a = trajectory_info['a']
             v0 = trajectory_info['v']
+            p0 = candidates[k_min, i_min]
 
-            ann += "v0 " + f"{v0[1]:.2f}".rjust(s) + f"{-v0[0]:.2f}".rjust(s) + f"{np.linalg.norm(v0):.2f}".rjust(s)
-            ann += "\n"
-            ann += "a  " + f"{a[1]:.2f}".rjust(s) + f"{-a[0]:.2f}".rjust(s) + f"{np.linalg.norm(a):.2f}".rjust(s)
             if stat_frame is not None:
-                v = a*(stat_frame - k_min - starting_frame) + v0
+                t = stat_frame - k_min - starting_frame
+                v = v0 + a*t
+                p = p0 + v0*t + a*t*t/2
+                ann += "p  " + f"{p[1]:.0f}".rjust(s) + f"{p[0]:.0f}".rjust(s)
                 ann += "\n"
-                ann += "v  " + f"{v[1]:.2f}".rjust(s) + f"{-v[0]:.2f}".rjust(s) + f"{np.linalg.norm(v):.2f}".rjust(s)
+                ann += "v  " + f"{v[1]:.2f}".rjust(s) + f"{v[0]:.2f}".rjust(s) + f"{np.linalg.norm(v):.2f}".rjust(s)
+                ann += "\n"
+            ann += "p0 " + f"{p0[1]:.0f}".rjust(s) + f"{p0[0]:.0f}".rjust(s)
+            ann += "\n"
+            ann += "v0 " + f"{v0[1]:.2f}".rjust(s) + f"{v0[0]:.2f}".rjust(s) + f"{np.linalg.norm(v0):.2f}".rjust(s)
+            ann += "\n"
+            ann += "a  " + f"{a[1]:.2f}".rjust(s) + f"{a[0]:.2f}".rjust(s) + f"{np.linalg.norm(a):.2f}".rjust(s)
         else:
+            if stat_frame is not None:
+                ann += "p  " + f"---".rjust(s) + f"---".rjust(s)
+                ann += "\n"
+                ann += "v  " + f"---".rjust(s) + f"---".rjust(s) + f"---".rjust(s)
+                ann += "\n"
+            ann += "p0 " + f"---".rjust(s) + f"---".rjust(s)
+            ann += "\n"
             ann += "v0 " + f"---".rjust(s) + f"---".rjust(s) + f"---".rjust(s)
             ann += "\n"
             ann += "a  " + f"---".rjust(s) + f"---".rjust(s) + f"---".rjust(s)
-            if stat_frame is not None:
-                ann += "\n"
-                ann += "v  " + f"---".rjust(s) + f"---".rjust(s) + f"---".rjust(s)
 
-        bbox = {'boxstyle': 'square,pad=0.7',
-                'facecolor': '#232323',
-                'edgecolor': '#FFFFFF',
+        facecolor = '#232323'if dark_mode else '#FFFFFF'
+        textcolor = '#FFFFFF' if dark_mode else '#000000'
+        alpha = 0.85 if dark_mode else 0.7
+        bbox = {'boxstyle': 'square,pad=0.5',
+                'facecolor': facecolor,
+                'edgecolor': textcolor,
                 'linewidth': 0.5,
-                'alpha': 0.85}
+                'alpha': alpha}
         font = FontProperties(family='monospace', size=fontsize)
-        ax.annotate(ann, [40, 40], fontproperties=font, bbox=bbox, color='#FFFFFF', va='top')
+        ax.annotate(ann, [40, 40], fontproperties=font, bbox=bbox, color=textcolor, va='top')
 
     # if the trajectory is not found, return the axes as they are
     if not exists_trajectory:
@@ -405,14 +420,16 @@ def show_neighboring_trajectories(frame_idx,
     return im2
 
 
-def create_trajectory_video(train_configuration, filename=None, training_phase=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, starting_frame=None, line_style='-', fitting_kw={}, **kwargs):
+def create_trajectory_video(train_configuration, filename=None, training_phase=None, fitting_info=None, path_mapping=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, starting_frame=None, line_style='-', fitting_kw={}, **kwargs):
     """Create trajectory video. If num_frames is 0 or 1, an image will be created."""
     sf, candidates, n_candidates, values = get_candidates(train_configuration, training_phase, split)
 
-    fitting_info = fit_trajectories(candidates, n_candidates, sf, **fitting_kw)
-    trajectory_graph = build_trajectory_graph(fitting_info)
-    shortest_paths = find_shortest_paths(trajectory_graph)
-    path_mapping = build_path_mapping(fitting_info, shortest_paths)
+    if fitting_info is None:
+        fitting_info = fit_trajectories(candidates, n_candidates, sf, **fitting_kw)
+        trajectory_graph = build_trajectory_graph(fitting_info)
+        shortest_paths = find_shortest_paths(trajectory_graph)
+    if path_mapping is None:
+        path_mapping = build_path_mapping(fitting_info, shortest_paths)
 
     print("Rendering video")
     filename_src = get_video_source(train_configuration, split)

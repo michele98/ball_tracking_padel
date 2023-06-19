@@ -392,7 +392,7 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
     costs = np.where(a[:,0] >= 0, costs, np.inf)
 
     # keep only points in which the acceleration horizontal component is smaller than 4x the vertical one
-    # i.e. we don't expect a lateral effect of more than 4g
+    # i.e. we don't expect a lateral effect of more than 2g
     costs = np.where(np.abs(a[:,1]) <= 2*np.abs(a[:,0]), costs, np.inf)
 
     if (costs==np.inf).all():
