@@ -206,7 +206,7 @@ def show_single_trajectory(fitting_info,
                 if stat_frame is not None:
                     v = a*(stat_frame - k_min - starting_frame) + v0
                     ann += "\n"
-                    ann += "v " + f"{a[1]:.2f}".rjust(s) + f"{-v[0]:.2f}".rjust(s) + f"{np.linalg.norm(v):.2f}".rjust(s)
+                    ann += "v " + f"{v[1]:.2f}".rjust(s) + f"{-v[0]:.2f}".rjust(s) + f"{np.linalg.norm(v):.2f}".rjust(s)
 
                 bbox['alpha'] = 0.85
                 bbox['facecolor'] = 'k'
