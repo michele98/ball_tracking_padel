@@ -239,7 +239,7 @@ def fit_trajectories_on_seed(candidates: np.ndarray, n_candidates: np.ndarray, k
         It is the central frame of each seed triplet.
     radius : int
         maximum distance between candidates of different frames
-        to use them for a seed triplet, by default 100
+        to use them for a seed triplet
     d_threshold : float
         maximum distance between the true position of the candidates and the estimated position
         in the previous iteration
@@ -321,7 +321,7 @@ def fit_trajectories_on_seed(candidates: np.ndarray, n_candidates: np.ndarray, k
     return parameters, info, trajectories, supports, costs
 
 
-def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float = 20, d_threshold: float = 5, N: int = 10):
+def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int, seed_radius: float, d_threshold: float, N: int):
     """Fit a parabolic trajectory to a seed frame given position candidates.
     Seed triplets are found first, and then for each seed triplet a trajectory is iteratively fitted.
     The trajectory with the lowest cost is then chosen.
@@ -338,15 +338,15 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
     k_seed : int
         seed frame from which to start calculating the ball trajectories.
         It is the central frame of each seed triplet.
-    seed_radius : float, optional
+    seed_radius : float
         maximum distance between candidates of different frames
-        to use them for a seed triplet. By default 20
-    d_threshold : float, optional
+        to use them for a seed triplet
+    d_threshold : float
         maximum distance between the true position of the candidates and the estimated position
-        in the previous iteration. By default 5
-    N : int : int, optional
+        in the previous iteration
+    N : int : int
         number of frames before and after to use for the trajectory fitting.
-        The window size will therefore be 2*N+1. By default 10
+        The window size will therefore be 2*N+1
 
     Returns
     -------
@@ -377,6 +377,26 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
                  'd_threshold': d_threshold,
                  'N': N}
     if costs is None:
+        # no seed triplets are found and therefore no trajectories
+        return info_dict
+
+    # filter trajectories based on acceleration
+    a = parameters[:,1]
+
+    # keep only accelerations with a magnitude larger than 0.2 pixels/frame^2
+    # this is useful to remove trajectories due to a stuck detection
+    costs = np.where(np.linalg.norm(a, axis=1) >= 0.2, costs, np.inf)
+
+    # keep only points in which the vertical acceleration points towards the ground
+    # i.e the y component must be positive in the image reference frame
+    costs = np.where(a[:,0] >= 0, costs, np.inf)
+
+    # keep only points in which the acceleration horizontal component is smaller than 4x the vertical one
+    # i.e. we don't expect a lateral effect of more than 4g
+    costs = np.where(np.abs(a[:,1]) <= 2*np.abs(a[:,0]), costs, np.inf)
+
+    if (costs==np.inf).all():
+        # edge case: all found trajectories have been filtered out
         return info_dict
 
     s = np.argmin(costs)
@@ -399,7 +419,7 @@ def fit_trajectory(candidates: np.ndarray, n_candidates: np.ndarray, k_seed: int
     return info_dict
 
 
-def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_frame: int = 0, seed_radius: float = 20, d_threshold: float = 5, N: int = 10):
+def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_frame: int=0, seed_radius: float=40, d_threshold: float=10, N: int=10):
     """Fit trajectories on the given position candidates.
 
     Parameters
@@ -415,10 +435,10 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_
         index of the first frame in the video onto which the trajectory fitting is done, by default 0
     seed_radius : float, optional
         maximum distance between candidates of different frames
-        to use them for a seed triplet. By default 20
+        to use them for a seed triplet. By default 40
     d_threshold : float, optional
         maximum distance between the true position of the candidates and the estimated position
-        in the previous iteration. By default 5
+        in the previous iteration. By default 10
     N : int : int, optional
         number of frames before and after to use for the trajectory fitting.
         The window size will therefore be 2*N+1. By default 10
@@ -455,6 +475,7 @@ def fit_trajectories(candidates: np.ndarray, n_candidates: np.ndarray, starting_
     fitting_info['trajectories'] = []
 
     print("Fitting trajectories:")
+    print(fitting_info['parameters'])
     for k in range(len(candidates)):
         print(f'{k+1} of {len(candidates)}', end='\r')
         trajectory_dict = fit_trajectory(candidates, n_candidates, k, seed_radius, d_threshold, N)

@@ -299,6 +299,7 @@ def show_neighboring_trajectories(frame_idx,
                                   path_mapping,
                                   frame,
                                   heatmap=None,
+                                  display = 'params k_min',
                                   color='w',
                                   alpha=1,
                                   num_prev=2,
@@ -348,7 +349,7 @@ def show_neighboring_trajectories(frame_idx,
     ax = show_single_trajectory(fitting_info,
                                 candidates,
                                 node,
-                                display='params k_min',
+                                display=display,
                                 frame=frame,
                                 stat_frame=frame_idx,
                                 alpha=alpha,
@@ -367,10 +368,10 @@ def show_neighboring_trajectories(frame_idx,
     return im2
 
 
-def create_trajectory_video(filename, train_configuration, training_phase=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, **kwargs):
+def create_trajectory_video(filename, train_configuration, training_phase=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, fitting_kw={}, **kwargs):
     starting_frame, candidates, n_candidates, values = get_candidates(train_configuration, training_phase, split)
 
-    fitting_info = fit_trajectories(candidates, n_candidates, starting_frame, N=10, seed_radius=40, d_threshold=10)
+    fitting_info = fit_trajectories(candidates, n_candidates, starting_frame, **fitting_kw)
     trajectory_graph = build_trajectory_graph(fitting_info)
     shortest_paths = find_shortest_paths(trajectory_graph)
     path_mapping = build_path_mapping(fitting_info, shortest_paths)
