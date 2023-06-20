@@ -444,6 +444,13 @@ def create_trajectory_video(train_configuration, filename=None, training_phase=N
         w, h = 1280, 720
     cap.release()
 
+    # get starting frame
+    if starting_frame is None:
+        starting_frame = sf
+    if starting_frame < sf:
+        print(f"No fit for frames before {sf}, starting from {sf}")
+        starting_frame = sf
+
     if num_frames is None:
         num_frames = len(candidates)
 
@@ -455,15 +462,9 @@ def create_trajectory_video(train_configuration, filename=None, training_phase=N
                               fourcc=cv2.VideoWriter_fourcc(*'XVID'),
                               fps=fps,
                               frameSize=(w, h))
+        num_frames = min(num_frames, list(path_mapping.keys())[-1] - starting_frame)
     else:
         num_frames = 2
-
-    # get starting frame
-    if starting_frame is None:
-        starting_frame = sf
-    if starting_frame < sf:
-        print(f"No fit for frames before {sf}, starting from {sf}")
-        starting_frame = sf
 
     fig, ax = plt.subplots(figsize=(w/dpi, h/dpi), dpi=dpi)
     for i, frame in enumerate(frame_generator(filename_src, starting_frame+1, starting_frame+num_frames)):

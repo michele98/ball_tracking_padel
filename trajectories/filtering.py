@@ -181,8 +181,8 @@ def find_next_nodes(frame_idx, path_mapping, n=1):
     idx = frame_idx
     for _ in range(n):
         idx, next_node = find_next_node(idx, path_mapping)
-        # if next_node is None:
-        #     break
+        if idx is None:
+            break
         next_nodes.append(next_node)
 
     return next_nodes
@@ -209,8 +209,8 @@ def find_prev_nodes(frame_idx, path_mapping, n=1):
     idx = frame_idx
     for _ in range(n):
         idx, previous_node = find_prev_node(idx, path_mapping)
-        # if previous_node is None:
-        #     break
+        if idx is None:
+            break
         previous_nodes.append(previous_node)
 
     return list(reversed(previous_nodes))
