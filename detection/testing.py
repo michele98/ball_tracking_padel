@@ -486,7 +486,8 @@ def create_video(filename_src : str,
                  start_frame : int = None,
                  stop_frame : int = None,
                  fps : int = None,
-                 frame_offset : int = 0):
+                 frame_offset : int = 0,
+                 output_resolution=None):
     """Save the video with the annotated ball position.
     And produce a json with the local maxima for each frame.
 
@@ -529,6 +530,8 @@ def create_video(filename_src : str,
         frames per second of the video, by default the one of the source video file.
     frame_offset : int, optional
         offset frame and heatmap. by default 0
+    output_resolution: tuple, optional
+        if not provided, will use input resolution
     """
 
     # get frame range
@@ -545,13 +548,18 @@ def create_video(filename_src : str,
     if not ret:
         cap.release()
         raise RuntimeError(f"Failed to video in {filename_src}")
-
     if fps is None:
         fps = cap.get(cv2.CAP_PROP_FPS)
+
     cap.release()
 
+    if output_resolution is not None:
+        w, h = output_resolution
+    else:
+        h, w = frame_src.shape[0], frame_src.shape[1]
+
+    print(w, h)
     # create the VideoWriter object
-    h, w = frame_src.shape[0], frame_src.shape[1]
     out = cv2.VideoWriter(filename=filename_dst,
                           fourcc=cv2.VideoWriter_fourcc(*'XVID'),
                           fps=fps,
@@ -561,6 +569,9 @@ def create_video(filename_src : str,
 
     # loop through the frames of the source video
     for i, frame in enumerate(frame_generator(filename_src, start_frame, start_frame+stop_frame)):
+        if output_resolution is not None:
+            frame = cv2.resize(frame.copy(), output_resolution)
+
         frame_index = position_df.loc[position_df['frame_num']==i+start_frame + frame_offset].index
         if len(frame_index) != 1:
             out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
@@ -633,7 +644,8 @@ def save_labeled_video(training_configuration,
                        show_ground_truth: bool = True,
                        detection_threshold: float = 0.1,
                        local_maxima_smoothing : float = 5,
-                       frame_offset : int = 0):
+                       frame_offset : int = 0,
+                       **kwargs):
     """Save the video with the annotated ball position (as a red dot). If `show_ground_truth` is True,
     the ground truth is shown as a green dot.
 
@@ -719,5 +731,6 @@ def save_labeled_video(training_configuration,
                      heatmaps_folder=heatmaps_folder,
                      detection_threshold=detection_threshold,
                      local_maxima_smoothing=local_maxima_smoothing,
-                     frame_offset=frame_offset)
+                     frame_offset=frame_offset,
+                     **kwargs)
         print()

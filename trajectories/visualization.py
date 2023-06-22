@@ -231,10 +231,10 @@ def show_single_trajectory(fitting_info,
     # trajectory
     k = np.arange(len(trajectory)) + k_seed - (len(trajectory)-1)//2
     if show_outside_range:
-        ax.plot(trajectory[k<=k_min,1],trajectory[k<=k_min,0], f'{trajectory_color}{line_style}', zorder=-1, alpha=alpha/4, **kwargs)
-        ax.plot(trajectory[k>=k_max,1],trajectory[k>=k_max,0], f'{trajectory_color}{line_style}', zorder=-1, alpha=alpha/4, **kwargs)
+        ax.plot(trajectory[k<=k_min,1],trajectory[k<=k_min,0], line_style, color=trajectory_color, zorder=-1, alpha=alpha/4, **kwargs)
+        ax.plot(trajectory[k>=k_max,1],trajectory[k>=k_max,0], line_style, color=trajectory_color, zorder=-1, alpha=alpha/4, **kwargs)
     mask = np.logical_and(k>=k_min, k<=k_max)
-    ax.plot(trajectory[mask,1],trajectory[mask,0], f'{trajectory_color}{line_style}', zorder=-1, alpha=alpha, **kwargs)
+    ax.plot(trajectory[mask,1],trajectory[mask,0], line_style, color=trajectory_color, zorder=-1, alpha=alpha, **kwargs)
 
     if display is not None:
         bbox = {'boxstyle': 'round',
@@ -351,9 +351,9 @@ def show_neighboring_trajectories(frame_idx,
                                   display='params k_min k_max',
                                   display_prev=None,
                                   display_next=None,
-                                  color='w',
-                                  color_prev='y',
-                                  color_next='g',
+                                  color='#FFFFFF',
+                                  color_prev='#FF914D',
+                                  color_next='#83A83B',
                                   alpha=1,
                                   alpha_prev=0.6,
                                   alpha_next=0.6,
@@ -420,7 +420,7 @@ def show_neighboring_trajectories(frame_idx,
     return im2
 
 
-def create_trajectory_video(train_configuration, filename=None, training_phase=None, fitting_info=None, path_mapping=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, starting_frame=None, line_style='-', fitting_kw={}, **kwargs):
+def create_trajectory_video(train_configuration, filename=None, training_phase=None, fitting_info=None, path_mapping=None, show_heatmaps=True, split='val_1', dpi=100, num_frames=None, starting_frame=None, line_style='-', fitting_kw={}, output_resolution=None, **kwargs):
     """Create trajectory video. If num_frames is 0 or 1, an image will be created."""
     sf, candidates, n_candidates, values = get_candidates(train_configuration, training_phase, split)
 
@@ -438,10 +438,15 @@ def create_trajectory_video(train_configuration, filename=None, training_phase=N
     cap = cv2.VideoCapture(filename_src)
     fps = cap.get(cv2.CAP_PROP_FPS)
     ret, first_frame = cap.read()
-    if ret:
-        h, w = first_frame.shape[0], first_frame.shape[1]
+
+    if output_resolution is not None:
+        w, h = output_resolution
     else:
-        w, h = 1280, 720
+        if ret:
+            h, w = first_frame.shape[0], first_frame.shape[1]
+        else:
+            w, h = 1280, 720
+
     cap.release()
 
     # get starting frame
@@ -468,6 +473,8 @@ def create_trajectory_video(train_configuration, filename=None, training_phase=N
 
     fig, ax = plt.subplots(figsize=(w/dpi, h/dpi), dpi=dpi)
     for i, frame in enumerate(frame_generator(filename_src, starting_frame, starting_frame+num_frames)):
+        if output_resolution is not None:
+            frame = cv2.resize(frame.copy(), output_resolution)
         ax.cla()
         if i%100 == 0:
             gc.collect()
