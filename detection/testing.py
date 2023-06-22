@@ -530,22 +530,28 @@ def create_video(filename_src : str,
     frame_offset : int, optional
         offset frame and heatmap. by default 0
     """
+
+    # get frame range
     if start_frame is None:
         start_frame = position_df['frame_num'].min()
     if stop_frame is None:
         stop_frame = position_df['frame_num'].max() - start_frame
-    if fps is None:
-        cap = cv2.VideoCapture(filename_src)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        cap.release()
 
-    frame_gen = frame_generator(filename_src, start_frame, start_frame+stop_frame) #initialize frame generator
-    first_frame = next(frame_gen)
+    # read the source video to get fps and resolution
+    # and set the resolution of the output video as the one of the input video
+    cap = cv2.VideoCapture(filename_src)
+
+    ret, frame_src = cap.read()
+    if not ret:
+        cap.release()
+        raise RuntimeError(f"Failed to video in {filename_src}")
+
+    if fps is None:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
 
     # create the VideoWriter object
-    # and set the resolution of the output video as the one of the input video
-    h, w = first_frame.shape[0], first_frame.shape[1]
-
+    h, w = frame_src.shape[0], frame_src.shape[1]
     out = cv2.VideoWriter(filename=filename_dst,
                           fourcc=cv2.VideoWriter_fourcc(*'XVID'),
                           fps=fps,
@@ -553,8 +559,9 @@ def create_video(filename_src : str,
 
     local_maxima = []
 
-    for i, frame in enumerate(frame_gen):
-        frame_index = position_df.loc[position_df['frame_num']==i+start_frame+1 + frame_offset].index
+    # loop through the frames of the source video
+    for i, frame in enumerate(frame_generator(filename_src, start_frame, start_frame+stop_frame)):
+        frame_index = position_df.loc[position_df['frame_num']==i+start_frame + frame_offset].index
         if len(frame_index) != 1:
             out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
             continue

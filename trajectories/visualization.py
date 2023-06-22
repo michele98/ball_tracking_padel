@@ -464,16 +464,16 @@ def create_trajectory_video(train_configuration, filename=None, training_phase=N
                               frameSize=(w, h))
         num_frames = min(num_frames, list(path_mapping.keys())[-1] - starting_frame)
     else:
-        num_frames = 2
+        num_frames = 1
 
     fig, ax = plt.subplots(figsize=(w/dpi, h/dpi), dpi=dpi)
-    for i, frame in enumerate(frame_generator(filename_src, starting_frame+1, starting_frame+num_frames)):
+    for i, frame in enumerate(frame_generator(filename_src, starting_frame, starting_frame+num_frames)):
         ax.cla()
         if i%100 == 0:
             gc.collect()
         heatmap=None
         if show_heatmaps:
-            heatmap = get_heatmap(train_configuration, i+starting_frame+1, split, training_phase=training_phase)
+            heatmap = get_heatmap(train_configuration, i+starting_frame, split, training_phase=training_phase)
         im2 = show_neighboring_trajectories(i+starting_frame,
                                             fitting_info,
                                             candidates,
